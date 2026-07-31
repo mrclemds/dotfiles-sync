@@ -1,0 +1,6 @@
+[Unit]
+Description=Apply dotfiles updates
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/dotfiles-sync sync

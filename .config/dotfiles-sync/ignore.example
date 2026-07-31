@@ -1,0 +1,8 @@
+# Positive Gitignore-style patterns for paths that must never be deployed.
+# Keep every ignored path Git-ignored in .gitignore as well.
+# Negation rules (!) are intentionally unsupported.
+# Examples:
+# .zshrc.local
+# *.private
+# secrets/*
+.gitkeep

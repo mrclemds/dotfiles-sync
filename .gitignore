@@ -1,0 +1,5 @@
+# Local OpenCode dependencies are not project source.
+.opencode/node_modules/
+
+# Kept only to retain an initially empty managed-root directory.
+.gitkeep

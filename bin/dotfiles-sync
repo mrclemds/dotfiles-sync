@@ -1,0 +1,594 @@
+#!/bin/sh
+# Pull and apply the configured dotfiles repository.
+
+set -eu
+
+CONFIG_FILE=${DOTFILES_SYNC_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles-sync/config}
+STATE_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles-sync
+LOG_FILE=$STATE_DIR/sync.log
+PID_FILE=$STATE_DIR/daemon.pid
+PENDING_DIR=$STATE_DIR/pending
+BACKUP_DIR=$STATE_DIR/backups
+
+log() {
+    mkdir -p "$STATE_DIR"
+    printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$*" | tee -a "$LOG_FILE"
+}
+
+die() { log "ERROR: $*" >&2; exit 1; }
+
+show_help() {
+    cat <<'EOF'
+Usage: dotfiles-sync <command> [options]
+
+Safely synchronize a Git-backed dotfiles checkout. Managed files are stored
+under home/ in the repository and applied to matching paths under $HOME.
+
+Commands:
+  install                 Install or repair the CLI and user scheduler.
+  self-update             Fast-forward the CLI repository and reinstall the CLI.
+  sync                    Fetch, fast-forward, stage managed files, and push.
+  check                   Fetch metadata and report repository status only.
+  apply                   Apply the staged revision to $HOME with a backup.
+  status                  Show the configured repository and revision state.
+  rollback [BACKUP]       Restore the latest backup, or BACKUP if specified.
+  store [OPTIONS] PATH... Copy files from $HOME into home/ and commit them.
+  daemon                  Poll continuously in the foreground.
+  help                    Show this help.
+
+Store options:
+  -m, --message MESSAGE   Commit with MESSAGE.
+  --auto-message          Generate a commit message from stored paths.
+  --dry-run               Preview required overwrite confirmation.
+  --confirm-overwrite ID  Confirm the ID returned by --dry-run.
+  --non-interactive       Do not prompt for a commit message or overwrite.
+  --list FILE             Read source paths from FILE.
+
+Safety:
+  sync and self-update require a clean checkout and accept only fast-forward updates.
+  sync stages changes but applies them only when APPLY_MODE=automatic; use apply
+  for the default manual mode. self-update never stages, applies, or pushes
+  dotfiles. install is idempotent and repairs the CLI and scheduler; use
+  self-update for new repository versions.
+  A tracked .config/dotfiles-sync/after-apply script runs after apply; set
+  AFTER_APPLY_HOOK= in the runtime config to disable it.
+
+EOF
+    printf 'Configuration: %s\n' "$CONFIG_FILE"
+    printf 'State and logs: %s\n' "$STATE_DIR"
+}
+
+load_config() {
+    [ -r "$CONFIG_FILE" ] || die "missing config: $CONFIG_FILE (run: dotfiles-sync install)"
+    # The config is shell syntax, but only values from the user's own file are sourced.
+    # shellcheck disable=SC1090
+    . "$CONFIG_FILE"
+    : "${REPO_DIR:?REPO_DIR is required in $CONFIG_FILE}"
+    : "${REMOTE:?REMOTE is required in $CONFIG_FILE}"
+    : "${BRANCH:=main}"
+    : "${POLL_INTERVAL:=21600}"
+    : "${APPLY_MODE:=manual}"
+    : "${DOTFILES_ROOT:=home}"
+    : "${IGNORE_FILE:=${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles-sync/ignore}"
+    if [ "${AFTER_APPLY_HOOK+x}" != x ]; then
+        AFTER_APPLY_HOOK=.config/dotfiles-sync/after-apply
+    fi
+}
+
+configured_paths() {
+    git -C "$REPO_DIR" ls-files -- "$DOTFILES_ROOT" | while IFS= read -r source_path; do
+        path=${source_path#"$DOTFILES_ROOT/"}
+        if ! ignored_path "$path"; then
+            printf '%s\n' "$path"
+        fi
+    done
+}
+
+ignored_path() {
+    path=$1
+    [ -r "$IGNORE_FILE" ] || return 1
+    basename=${path##*/}
+    # Dynamic case patterns are intentional here; they implement ignore globs.
+    # shellcheck disable=SC2125,SC2254
+    while IFS= read -r pattern || [ -n "$pattern" ]; do
+        case "$pattern" in
+            ''|'#'*) continue ;;
+            !*) die "negation rules are not supported in $IGNORE_FILE: $pattern" ;;
+            */) pattern=${pattern%/}/* ;;
+        esac
+        case "$path" in
+            $pattern) return 0 ;;
+        esac
+        case "$basename" in
+            $pattern) return 0 ;;
+        esac
+    done < "$IGNORE_FILE"
+    return 1
+}
+
+stage_files() {
+    commit=$1
+    stage=$PENDING_DIR/$commit
+    rm -rf "$stage"
+    mkdir -p "$stage"
+    configured_paths | while IFS= read -r path; do
+        source=$REPO_DIR/$DOTFILES_ROOT/$path
+        [ -e "$source" ] || die "configured file does not exist: $source"
+        mkdir -p "$stage/$(dirname "$path")"
+        cp -p "$source" "$stage/$path"
+    done
+    printf '%s\n' "$commit" > "$STATE_DIR/pending-commit"
+    log "staged revision $commit"
+}
+
+validate_stage() {
+    stage=$1
+    configured_paths | while IFS= read -r path; do
+        case "$path" in
+            *.bash|*.bashrc|*.sh) sh -n "$stage/$path" || die "shell validation failed: $path" ;;
+            *.zsh|*.zshrc)
+                if command -v zsh >/dev/null 2>&1; then
+                    zsh -n "$stage/$path" || die "shell validation failed: $path"
+                fi
+                ;;
+        esac
+    done
+    validate_after_apply_hook "$stage"
+}
+
+validate_after_apply_hook() {
+    stage=$1
+    case "$AFTER_APPLY_HOOK" in
+        '') return 0 ;;
+        /*|../*|*/../*|*/..) die "AFTER_APPLY_HOOK must be a path relative to HOME" ;;
+    esac
+    hook=$stage/$AFTER_APPLY_HOOK
+    [ ! -e "$hook" ] && return 0
+    [ -f "$hook" ] || die "after-apply hook is not a regular file: $AFTER_APPLY_HOOK"
+    sh -n "$hook" || die "after-apply hook validation failed: $AFTER_APPLY_HOOK"
+}
+
+after_apply_hook_is_tracked() {
+    git -C "$REPO_DIR" ls-files --error-unmatch -- "$DOTFILES_ROOT/$AFTER_APPLY_HOOK" >/dev/null 2>&1 \
+        && ! ignored_path "$AFTER_APPLY_HOOK"
+}
+
+run_after_apply_hook() {
+    case "$AFTER_APPLY_HOOK" in
+        '') return 0 ;;
+    esac
+    after_apply_hook_is_tracked || return 0
+    hook=$HOME/$AFTER_APPLY_HOOK
+    [ ! -e "$hook" ] && return 0
+    [ -f "$hook" ] || die "after-apply hook is not a regular file: $AFTER_APPLY_HOOK"
+    log "running after-apply hook: $AFTER_APPLY_HOOK"
+    DOTFILES_SYNC_REPO_DIR=$REPO_DIR DOTFILES_SYNC_REVISION=$commit sh "$hook"
+    log "completed after-apply hook: $AFTER_APPLY_HOOK"
+}
+
+apply_pending() {
+    load_config
+    [ -r "$STATE_DIR/pending-commit" ] || die "no pending update"
+    commit=$(cat "$STATE_DIR/pending-commit")
+    stage=$PENDING_DIR/$commit
+    [ -d "$stage" ] || die "pending snapshot is missing: $stage"
+    validate_stage "$stage"
+    timestamp=$(date '+%Y%m%d%H%M%S')
+    backup=$BACKUP_DIR/$timestamp
+    mkdir -p "$backup"
+    configured_paths | while IFS= read -r path; do
+        target=$HOME/$path
+        if [ -e "$target" ]; then
+            mkdir -p "$backup/$(dirname "$path")"
+            cp -p "$target" "$backup/$path"
+        fi
+    done
+    configured_paths | while IFS= read -r path; do
+        target=$HOME/$path
+        temp=$target.dotfiles-sync.$$
+        mkdir -p "$(dirname "$target")"
+        cp -p "$stage/$path" "$temp"
+    done
+    configured_paths | while IFS= read -r path; do
+        target=$HOME/$path
+        temp=$target.dotfiles-sync.$$
+        mv "$temp" "$target"
+        log "applied $path"
+    done
+    printf '%s\n' "$commit" > "$STATE_DIR/applied-commit"
+    rm -f "$STATE_DIR/pending-commit"
+    rm -rf "$stage"
+    log "applied revision $commit; backup: $backup"
+    run_after_apply_hook
+}
+
+show_status() {
+    load_config
+    printf 'Repository: %s\n' "$REPO_DIR"
+    printf 'Apply mode: %s\n' "$APPLY_MODE"
+    printf 'Applied: %s\n' "$(cat "$STATE_DIR/applied-commit" 2>/dev/null || printf 'none')"
+    printf 'Pending: %s\n' "$(cat "$STATE_DIR/pending-commit" 2>/dev/null || printf 'none')"
+}
+
+rollback() {
+    load_config
+    backup=${1:-}
+    if [ -z "$backup" ]; then
+        for candidate in "$BACKUP_DIR"/*; do
+            [ -d "$candidate" ] || continue
+            backup=${candidate##*/}
+        done
+    fi
+    if [ -z "$backup" ] || [ ! -d "$BACKUP_DIR/$backup" ]; then
+        die "no backup available"
+    fi
+    configured_paths | while IFS= read -r path; do
+        [ -e "$BACKUP_DIR/$backup/$path" ] || continue
+        target=$HOME/$path
+        mkdir -p "$(dirname "$target")"
+        cp -p "$BACKUP_DIR/$backup/$path" "$target"
+        log "restored $path"
+    done
+    log "rolled back from backup $backup"
+}
+
+store_path() {
+    input=$1
+    home_real=$(CDPATH=; cd -P "$HOME" && pwd)
+    if [ "${input#/}" = "$input" ]; then
+        input=$PWD/$input
+    fi
+    source_dir=$(CDPATH=; cd -P "$(dirname "$input")" 2>/dev/null && pwd) || die "path does not exist: $1"
+    source=$source_dir/$(basename "$input")
+    [ -f "$source" ] || die "not a regular file: $1"
+    case "$source" in
+        "$home_real"/*) relative=${source#"$home_real"/} ;;
+        *) die "store accepts only files under HOME: $1" ;;
+    esac
+    if ignored_path "$relative"; then
+        log "skipped ignored path: $relative"
+        return 0
+    fi
+    target=$REPO_DIR/$DOTFILES_ROOT/$relative
+    printf '%s\t%s\n' "$relative" "$source" >> "$STORE_PLAN"
+    if [ -e "$target" ] && ! cmp -s "$source" "$target"; then
+        printf '%s\n' "$relative" >> "$STORE_OVERWRITES"
+    fi
+}
+
+store() {
+    load_config
+    message=
+    auto_message=no
+    dry_run=no
+    confirm_token=
+    non_interactive=no
+    list_file=
+    paths_file=$STATE_DIR/store-paths.$$
+    STORE_PLAN=$STATE_DIR/store-plan.$$
+    STORE_OVERWRITES=$STATE_DIR/store-overwrites.$$
+    STORE_FILES=$STATE_DIR/store-files.$$
+    trap 'rm -f "$paths_file" "$STORE_PLAN" "$STORE_OVERWRITES" "$STORE_FILES" "$paths_file.files"' 0 1 2 3 15
+    : > "$paths_file"
+    : > "$STORE_PLAN"
+    : > "$STORE_OVERWRITES"
+    : > "$STORE_FILES"
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --message|-m)
+                [ "$#" -ge 2 ] || die "$1 requires a message"
+                message=$2
+                shift 2
+                ;;
+            --auto-message)
+                auto_message=yes
+                shift
+                ;;
+            --confirm-overwrite)
+                [ "$#" -ge 2 ] || die "--confirm-overwrite requires a signature"
+                confirm_token=$2
+                shift 2
+                ;;
+            --dry-run)
+                dry_run=yes
+                shift
+                ;;
+            --non-interactive)
+                non_interactive=yes
+                shift
+                ;;
+            --list)
+                [ "$#" -ge 2 ] || die "--list requires a file"
+                list_file=$2
+                shift 2
+                ;;
+            --)
+                shift
+                while [ "$#" -gt 0 ]; do
+                    printf '%s\n' "$1" >> "$paths_file"
+                    shift
+                done
+                ;;
+            -*) die "unknown store option: $1" ;;
+            *) printf '%s\n' "$1" >> "$paths_file"; shift ;;
+        esac
+    done
+    [ -z "$list_file" ] || cat "$list_file" >> "$paths_file" || die "cannot read list: $list_file"
+    [ -s "$paths_file" ] || die "store requires at least one path"
+    [ -z "$(git -C "$REPO_DIR" status --porcelain)" ] || die "local changes found in $REPO_DIR; refusing to mix store changes"
+
+    while IFS= read -r input; do
+        [ -n "$input" ] || continue
+        if [ -d "$input" ]; then
+            find "$input" -type f -print >> "$paths_file.files"
+        else
+            store_path "$input"
+        fi
+    done < "$paths_file"
+    if [ -r "$paths_file.files" ]; then
+        while IFS= read -r input; do
+            store_path "$input"
+        done < "$paths_file.files"
+        rm -f "$paths_file.files"
+    fi
+    [ -s "$STORE_PLAN" ] || die "no files were stored"
+    overwrite_token=
+    if [ -s "$STORE_OVERWRITES" ]; then
+        checksum=$(cksum "$STORE_OVERWRITES" | cut -d ' ' -f 1)
+        overwrite_token="dotfiles-sync-overwrite-$checksum"
+        if [ "$dry_run" = yes ]; then
+            printf 'OVERWRITE_TOKEN=%s\n' "$overwrite_token"
+            printf 'Files requiring overwrite:\n'
+            cat "$STORE_OVERWRITES"
+            return 0
+        fi
+        if [ "$non_interactive" = yes ] || [ ! -t 0 ] || [ ! -t 1 ]; then
+            [ "$confirm_token" = "$overwrite_token" ] || die "overwrite requires --confirm-overwrite $overwrite_token (run --dry-run first)"
+        else
+            while IFS= read -r relative; do
+                target=$REPO_DIR/$DOTFILES_ROOT/$relative
+                printf 'Overwrite %s? [y/N] ' "$target" > /dev/tty
+                read -r answer < /dev/tty || die "cannot read overwrite confirmation"
+                case "$answer" in
+                    y|Y|yes|YES) ;;
+                    *) die "overwrite declined: $relative" ;;
+                esac
+            done < "$STORE_OVERWRITES"
+        fi
+    elif [ "$dry_run" = yes ]; then
+        printf '%s\n' 'No overwrite required.'
+        return 0
+    elif [ -n "$confirm_token" ]; then
+        die "--confirm-overwrite is only valid when an overwrite is required"
+    fi
+    if [ -z "$message" ] && [ "$auto_message" != yes ] \
+        && { [ "$non_interactive" = yes ] || [ ! -t 0 ] || [ ! -t 1 ]; }; then
+        die "non-interactive store requires --message or --auto-message"
+    fi
+    if [ -z "$message" ]; then
+        if [ "$auto_message" = yes ]; then
+            files=$(cut -f 1 "$STORE_PLAN" | tr '\n' ' ')
+            message="Updates ${files% }"
+        else
+            printf 'Commit message: ' > /dev/tty
+            read -r message < /dev/tty || die "cannot read commit message"
+            [ -n "$message" ] || die "commit message cannot be empty"
+        fi
+    fi
+    while IFS= read -r plan_line; do
+        relative=$(printf '%s\n' "$plan_line" | cut -f 1)
+        source=$(printf '%s\n' "$plan_line" | cut -f 2-)
+        target=$REPO_DIR/$DOTFILES_ROOT/$relative
+        mkdir -p "$(dirname "$target")"
+        cp -p "$source" "$target"
+        printf '%s\n' "$relative" >> "$STORE_FILES"
+    done < "$STORE_PLAN"
+    git -C "$REPO_DIR" add -- "$DOTFILES_ROOT"
+    git -C "$REPO_DIR" commit -m "$message"
+    log "stored and committed files; push the repository separately to synchronize other machines"
+}
+
+check_once() {
+    load_config
+    [ -d "$REPO_DIR/.git" ] || die "REPO_DIR is not a git checkout: $REPO_DIR"
+    [ -d "$REPO_DIR/$DOTFILES_ROOT" ] || die "managed files directory is missing: $REPO_DIR/$DOTFILES_ROOT"
+    cd "$REPO_DIR"
+    [ -z "$(git status --porcelain)" ] || die "local changes found in $REPO_DIR; refusing to overwrite them"
+    git fetch --quiet origin "$BRANCH"
+    local_head=$(git rev-parse HEAD)
+    remote_head=$(git rev-parse "origin/$BRANCH")
+    if [ "$local_head" = "$remote_head" ]; then
+        log "up to date: $local_head"
+    elif git merge-base --is-ancestor HEAD "origin/$BRANCH"; then
+        log "remote has updates: local=$local_head remote=$remote_head"
+    elif git merge-base --is-ancestor "origin/$BRANCH" HEAD; then
+        log "local has unpushed commits: local=$local_head remote=$remote_head"
+    else
+        die "local and remote histories diverged; resolve manually in $REPO_DIR"
+    fi
+}
+
+sync_once() {
+    load_config
+    [ -d "$REPO_DIR/.git" ] || die "REPO_DIR is not a git checkout: $REPO_DIR"
+    [ -d "$REPO_DIR/$DOTFILES_ROOT" ] || die "managed files directory is missing: $REPO_DIR/$DOTFILES_ROOT"
+    cd "$REPO_DIR"
+    [ -z "$(git status --porcelain)" ] || die "local changes found in $REPO_DIR; refusing to synchronize"
+    git fetch --quiet origin "$BRANCH"
+    local_head=$(git rev-parse HEAD)
+    remote_head=$(git rev-parse "origin/$BRANCH")
+    if [ "$local_head" != "$remote_head" ]; then
+        if git merge-base --is-ancestor HEAD "origin/$BRANCH"; then
+            git merge --ff-only --quiet "origin/$BRANCH"
+            commit=$(git rev-parse HEAD)
+            stage_files "$commit"
+            validate_stage "$PENDING_DIR/$commit"
+            if [ "$APPLY_MODE" = automatic ]; then
+                apply_pending
+            elif [ "$APPLY_MODE" != manual ] && [ "$APPLY_MODE" != prompt ]; then
+                die "APPLY_MODE must be manual, prompt, or automatic"
+            fi
+            log "pulled and staged revision $commit"
+        elif ! git merge-base --is-ancestor "origin/$BRANCH" HEAD; then
+            die "local and remote histories diverged; resolve manually in $REPO_DIR"
+        fi
+    fi
+    local_head=$(git rev-parse HEAD)
+    remote_head=$(git rev-parse "origin/$BRANCH")
+    if [ "$local_head" != "$remote_head" ]; then
+        git push --quiet origin "HEAD:$BRANCH"
+        log "pushed revision $local_head"
+    else
+        log "synchronized at revision $local_head"
+    fi
+}
+
+self_update() {
+    load_config
+    [ -d "$REPO_DIR/.git" ] || die "REPO_DIR is not a git checkout: $REPO_DIR"
+    [ -x "$REPO_DIR/bin/dotfiles-sync" ] || die "CLI source is missing: $REPO_DIR/bin/dotfiles-sync"
+    cd "$REPO_DIR"
+    [ -z "$(git status --porcelain)" ] || die "local changes found in $REPO_DIR; refusing to self-update"
+    git fetch --quiet origin "$BRANCH"
+    local_head=$(git rev-parse HEAD)
+    remote_head=$(git rev-parse "origin/$BRANCH")
+    if [ "$local_head" = "$remote_head" ]; then
+        log "CLI repository is up to date: $local_head"
+    elif git merge-base --is-ancestor HEAD "origin/$BRANCH"; then
+        git merge --ff-only --quiet "origin/$BRANCH"
+        log "updated CLI repository to $(git rev-parse HEAD)"
+        exec "$REPO_DIR/bin/dotfiles-sync" install
+    elif git merge-base --is-ancestor "origin/$BRANCH" HEAD; then
+        die "local commits found in $REPO_DIR; push or resolve them before self-updating"
+    else
+        die "local and remote histories diverged; resolve manually in $REPO_DIR"
+    fi
+}
+
+install_sync() {
+    config_dir=$(dirname "$CONFIG_FILE")
+    mkdir -p "$config_dir" "$STATE_DIR" "$HOME/.local/bin"
+    script_dir=$(CDPATH=; cd -- "$(dirname "$0")" && pwd)
+    ignore_example=$script_dir/../.config/dotfiles-sync/ignore.example
+    cp "$script_dir/dotfiles-sync" "$HOME/.local/bin/dotfiles-sync"
+    chmod 755 "$HOME/.local/bin/dotfiles-sync"
+    if [ ! -r "$CONFIG_FILE" ]; then
+        repo_dir=$(CDPATH=; cd -- "$(dirname "$0")/.." && pwd)
+        remote=$(git -C "$repo_dir" config --get remote.origin.url || true)
+        [ -n "$remote" ] || die "could not determine git remote; set REMOTE in $CONFIG_FILE"
+        cat >"$CONFIG_FILE" <<EOF
+# dotfiles-sync configuration. Paths are relative to REPO_DIR, one per line.
+REPO_DIR=$repo_dir
+REMOTE=$remote
+BRANCH=main
+POLL_INTERVAL=21600
+APPLY_MODE=manual
+DOTFILES_ROOT=home
+IGNORE_FILE=$config_dir/ignore
+# Relative to HOME. Set empty to disable the default after-apply hook.
+AFTER_APPLY_HOOK=.config/dotfiles-sync/after-apply
+EOF
+        log "created $CONFIG_FILE"
+    fi
+    if [ ! -r "$config_dir/ignore" ] && [ -r "$ignore_example" ]; then
+        cp "$ignore_example" "$config_dir/ignore"
+        log "created $config_dir/ignore"
+    fi
+    load_config
+    log "installed $HOME/.local/bin/dotfiles-sync"
+    install_service "$script_dir/.."
+}
+
+install_service() {
+    repo_root=$1
+    os=$(uname -s)
+
+    if [ "$os" = Linux ] && command -v systemctl >/dev/null 2>&1 \
+        && systemctl --user show-environment >/dev/null 2>&1; then
+        service_dir=${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user
+        mkdir -p "$service_dir"
+        cp "$repo_root/systemd/dotfiles-sync.service" "$service_dir/"
+        cp "$repo_root/systemd/dotfiles-sync.timer" "$service_dir/"
+        systemctl --user daemon-reload
+        systemctl --user enable --now dotfiles-sync.timer
+        log "enabled systemd user timer (every ${POLL_INTERVAL}s)"
+        return 0
+    fi
+
+    if [ "$os" = Darwin ] && command -v launchctl >/dev/null 2>&1; then
+        launch_agent_dir=$HOME/Library/LaunchAgents
+        launch_agent=$launch_agent_dir/com.dotfiles.sync.plist
+        mkdir -p "$launch_agent_dir"
+        cat >"$launch_agent" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.dotfiles.sync</string>
+  <key>ProgramArguments</key><array><string>$HOME/.local/bin/dotfiles-sync</string><string>sync</string></array>
+  <key>StartInterval</key><integer>$POLL_INTERVAL</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>$LOG_FILE</string>
+  <key>StandardErrorPath</key><string>$LOG_FILE</string>
+</dict></plist>
+EOF
+        launchctl bootout "gui/$(id -u)/com.dotfiles.sync" >/dev/null 2>&1 || true
+        launchctl bootstrap "gui/$(id -u)" "$launch_agent"
+        log "enabled launchd agent (every ${POLL_INTERVAL}s)"
+        return 0
+    fi
+
+    if command -v crontab >/dev/null 2>&1; then
+        cron_minutes=$((POLL_INTERVAL / 60))
+        if [ "$cron_minutes" -lt 1 ]; then
+            start_background_daemon
+            return 0
+        fi
+        cron_line="*/$cron_minutes * * * * $HOME/.local/bin/dotfiles-sync sync >>$LOG_FILE 2>&1"
+        existing=$(crontab -l 2>/dev/null || true)
+        case "\n$existing\n" in
+            *"\n$HOME/.local/bin/dotfiles-sync sync "*) ;;
+            *) printf '%s\n%s\n' "$existing" "$cron_line" | crontab - ;;
+        esac
+        log "enabled user cron job (every $cron_minutes minutes)"
+        return 0
+    fi
+
+    start_background_daemon
+}
+
+start_background_daemon() {
+    if [ -r "$PID_FILE" ]; then
+        pid=$(cat "$PID_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+            log "background daemon already running (pid $pid)"
+            return 0
+        fi
+        rm -f "$PID_FILE"
+    fi
+    nohup "$HOME/.local/bin/dotfiles-sync" daemon >>"$LOG_FILE" 2>&1 </dev/null &
+    pid=$!
+    printf '%s\n' "$pid" >"$PID_FILE"
+    log "started background daemon (pid $pid; it must be restarted after the environment restarts)"
+}
+
+daemon() {
+    load_config
+    while :; do
+        sync_once || log "sync failed; retrying in ${POLL_INTERVAL}s"
+        sleep "$POLL_INTERVAL"
+    done
+}
+
+case "${1:-sync}" in
+    --help|-h|help) show_help ;;
+    install) install_sync ;;
+    self-update) self_update ;;
+    sync) sync_once ;;
+    check) check_once ;;
+    apply) apply_pending ;;
+    status) show_status ;;
+    rollback) rollback "${2:-}" ;;
+    store) shift; store "$@" ;;
+    daemon) daemon ;;
+    *) die "unknown command: $1 (run: dotfiles-sync --help)" ;;
+esac
