@@ -2,7 +2,7 @@
 
 set -eu
 
-ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+ROOT=$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)
 TEST_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-sync-test.XXXXXX")
 trap 'rm -rf "$TEST_DIR"' 0 1 2 3 15
 
@@ -54,6 +54,7 @@ mkdir -p "$TEST_DIR/release"
 printf '%s\n' v1.1.1 > "$TEST_DIR/release/.release-version"
 sed -n '/^release_version_is_valid()/,/^}/p' "$ROOT/bin/dotfiles-sync" > "$TEST_DIR/version-functions"
 sed -n '/^release_directory_version()/,/^}/p' "$ROOT/bin/dotfiles-sync" >> "$TEST_DIR/version-functions"
+# shellcheck source=/dev/null
 . "$TEST_DIR/version-functions"
 [ "$(release_directory_version "$TEST_DIR/release")" = v1.1.1 ] \
     || fail "release version marker lost its v prefix"
@@ -71,6 +72,8 @@ git -C "$TEST_DIR/seed" push origin main >/dev/null
 "$TEST_DIR/tool/bin/dotfiles-sync" install --remote "$TEST_DIR/remote.git" --branch main >/dev/null
 assert_file "$HOME/.local/bin/dotfiles-sync"
 assert_file "$XDG_CONFIG_HOME/dotfiles-sync/config"
+# The runtime config must retain this expression for the updater to expand.
+# shellcheck disable=SC2016
 printf '%s\n' 'IGNORE_FILE="${HOME:-/test}/.config/dotfiles-sync/ignore"' \
     >> "$XDG_CONFIG_HOME/dotfiles-sync/config"
 printf 'one\n' > "$HOME/managed.txt"

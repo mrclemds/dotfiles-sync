@@ -102,8 +102,10 @@ jobs:
           version_is_greater() {
             candidate=$1
             current=$2
+            # shellcheck disable=SC2046
             set -- $(version_parts "$candidate")
             candidate_major=$1 candidate_minor=$2 candidate_patch=$3
+            # shellcheck disable=SC2046
             set -- $(version_parts "$current")
             current_major=$1 current_minor=$2 current_patch=$3
             [ "$candidate_major" -gt "$current_major" ] && return 0
