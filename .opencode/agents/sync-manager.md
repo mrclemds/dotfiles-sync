@@ -29,5 +29,8 @@ When changing behavior:
 6. Keep `AGENTS.md`, `.github/copilot-instructions.md`, and relevant
    `.opencode/` skills aligned when shared rules change.
 
+When asked to commit, use a Conventional Commit subject:
+`type(optional-scope): short imperative description`.
+
 Do not enable automatic application by default. Do not commit or push unless
 the user explicitly asks.

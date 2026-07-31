@@ -12,6 +12,8 @@ GitHub Codespaces.
 - Use POSIX shell for shared updater code unless a Bash or Zsh feature is
   explicitly required and guarded.
 - Never silently overwrite user configuration.
+- When creating a commit, use Conventional Commits: `type(optional-scope): short
+  imperative description`.
 - Do not commit, push, or create pull requests unless explicitly requested.
 
 ## Dotfiles Sync Contract

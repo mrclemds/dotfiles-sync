@@ -13,6 +13,8 @@ deploy across multiple machines.
   required and explicitly documented.
 - Never silently overwrite a user's local configuration. Use backups,
   allowlists, staging, or an explicit migration.
+- When creating a commit, use Conventional Commits: `type(optional-scope): short
+  imperative description`.
 - Do not commit, push, or create pull requests unless explicitly requested.
 - When shared behavior changes, keep `.github/copilot-instructions.md` and the
   OpenCode files under `.opencode/`, and Codex skills under `.agents/skills/`

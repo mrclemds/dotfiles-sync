@@ -31,6 +31,7 @@ are stored under its configured root and applied to matching paths under $HOME.
 
 Commands:
   install [OPTIONS]       Install or repair the CLI and user scheduler.
+  uninstall [OPTIONS]     Remove the CLI, scheduler, and optional configuration.
   self-update             Download and install the latest CLI release.
   sync                    Fetch, fast-forward, stage managed files, and push.
   check                   Fetch metadata and report repository status only.
@@ -53,6 +54,10 @@ Install options (required only when no runtime config exists):
   -r, --remote URL        Dotfiles repository URL; prompted interactively if omitted.
   -b, --branch NAME       Dotfiles branch; defaults to the remote default branch.
 
+Uninstall options:
+  --keep-config           Remove the CLI and scheduler without prompting for config cleanup.
+  --remove-config         Remove the CLI, scheduler, and runtime config without prompting.
+
 Safety:
   sync requires a clean checkout and accepts only fast-forward updates. It stages
   changes but applies them only when APPLY_MODE=automatic; use apply for the
@@ -73,7 +78,9 @@ load_config() {
     # shellcheck disable=SC1090
     . "$CONFIG_FILE"
     : "${REMOTE:?REMOTE is required in $CONFIG_FILE}"
-    : "${BRANCH:=master}"
+    if [ -z "${BRANCH+x}" ] || [ -z "$BRANCH" ]; then
+        BRANCH=$(remote_default_branch "$REMOTE") || die "could not determine the default branch; set BRANCH in $CONFIG_FILE"
+    fi
     : "${POLL_INTERVAL:=21600}"
     : "${APPLY_MODE:=manual}"
     : "${DOTFILES_ROOT:=.}"
@@ -623,6 +630,65 @@ EOF
     install_service "$INSTALL_DIR"
 }
 
+uninstall_sync() {
+    config_cleanup=prompt
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --keep-config) config_cleanup=no ;;
+            --remove-config) config_cleanup=yes ;;
+            *) die "unknown uninstall option: $1" ;;
+        esac
+        shift
+    done
+    if [ "$config_cleanup" = prompt ]; then
+        if [ -t 0 ] && [ -t 1 ]; then
+            printf 'Remove %s? [y/N] ' "${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles-sync" > /dev/tty
+            read -r answer < /dev/tty || die "cannot read configuration cleanup confirmation"
+            case "$answer" in
+                y|Y|yes|YES) config_cleanup=yes ;;
+                *) config_cleanup=no ;;
+            esac
+        else
+            config_cleanup=no
+        fi
+    fi
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl --user disable --now dotfiles-sync.timer >/dev/null 2>&1 || true
+        rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/dotfiles-sync.service" \
+            "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/dotfiles-sync.timer"
+        systemctl --user daemon-reload >/dev/null 2>&1 || true
+    fi
+    if command -v launchctl >/dev/null 2>&1; then
+        launchctl bootout "gui/$(id -u)/com.dotfiles.sync" >/dev/null 2>&1 || true
+        rm -f "$HOME/Library/LaunchAgents/com.dotfiles.sync.plist"
+    fi
+    if command -v crontab >/dev/null 2>&1; then
+        cron_line="$HOME/.local/bin/dotfiles-sync sync"
+        existing=$(crontab -l 2>/dev/null || true)
+        case "$existing" in
+            *"$cron_line"*)
+                filtered=$(printf '%s\n' "$existing" | grep -F -v "$cron_line" || true)
+                printf '%s\n' "$filtered" | crontab -
+                ;;
+        esac
+    fi
+    if [ -r "$PID_FILE" ]; then
+        pid=$(cat "$PID_FILE")
+        case "$pid" in
+            ''|*[!0-9]*) ;;
+            *) kill "$pid" >/dev/null 2>&1 || true ;;
+        esac
+    fi
+    rm -f "$HOME/.local/bin/dotfiles-sync"
+    rm -rf "$INSTALL_DIR" "$STATE_DIR"
+    if [ "$config_cleanup" = yes ]; then
+        rm -rf "${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles-sync"
+    elif [ -e "${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles-sync" ]; then
+        printf 'Configuration retained: %s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles-sync"
+    fi
+    printf '%s\n' 'dotfiles-sync uninstalled'
+}
+
 install_service() {
     repo_root=$1
     os=$(uname -s)
@@ -706,6 +772,7 @@ daemon() {
 case "${1:-sync}" in
     --help|-h|help) show_help ;;
     install) shift; install_sync "$@" ;;
+    uninstall) shift; uninstall_sync "$@" ;;
     self-update) self_update ;;
     sync) sync_once ;;
     check) check_once ;;

@@ -27,4 +27,7 @@ After editing:
 - Keep `AGENTS.md`, `.github/copilot-instructions.md`, and relevant
   `.opencode/` skills aligned when shared rules change.
 
+When asked to commit, use a Conventional Commit subject:
+`type(optional-scope): short imperative description`.
+
 Do not commit or push unless explicitly requested.

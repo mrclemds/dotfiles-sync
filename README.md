@@ -29,6 +29,7 @@ cloned into `dotfiles/`; its configured root contains the managed files.
 
 ```text
 install    Install or repair the command and register a user scheduler
+uninstall  Remove the command, scheduler, and optional runtime configuration
 self-update Download and install the latest CLI release
 store      Copy local HOME files into the configured root, then create a Git commit
 sync       Pull, stage/apply, and push updates in both directions
@@ -152,6 +153,14 @@ registers the best available user scheduler. It does not require root
 privileges. It is safe to rerun to repair the installation after a path or
 scheduler change; use `dotfiles-sync self-update` to retrieve a newer release.
 
+### Uninstallation
+
+`dotfiles-sync uninstall` disables the scheduler and removes the deployed CLI,
+command wrapper, and runtime state. It asks whether to remove
+`~/.config/dotfiles-sync/`; choose `--keep-config` or `--remove-config` to skip
+that question. Non-interactive uninstalls keep configuration unless
+`--remove-config` is provided.
+
 The tracked configuration example is:
 
 ```text
@@ -186,16 +195,18 @@ Every release keeps its own `dotfiles-sync.tgz` asset. GitHub's latest-release
 marker changes only when the tag is greater than the current latest version
 using numeric major, minor, and patch ordering.
 
+Each release description is a changelog generated from Conventional Commit
+subjects between the preceding tag and the release tag.
+
 The first `v1` tag creates a `release/v1` maintenance branch. The first `v1.2`
 or `v1.2.3` tag similarly creates a `release/v1.2` branch. Later tags leave an
 existing maintenance branch unchanged so patch fixes can be delivered from that
 branch. The `release/*` namespace is reserved for maintenance branches and can
 be used by workflow triggers and branch-protection rules.
 
-The tag that creates a maintenance branch must be reachable from `master` or
-`main`. Later patch tags, such as `v1.2.1`, must already be reachable from their
-maintenance branch (`release/v1.2`); the workflow rejects patch releases cut
-from `master` or `main`.
+The tag that creates a maintenance branch must be reachable from `main`. Later
+patch tags, such as `v1.2.1`, must already be reachable from their maintenance
+branch (`release/v1.2`); the workflow rejects patch releases cut from `main`.
 
 `install` deploys the CLI under `~/.local/share/dotfiles-sync` and places a
 wrapper at `~/.local/bin/dotfiles-sync`. Existing installations update through
@@ -208,6 +219,20 @@ repository (`gh auth login`) or supply `GH_TOKEN` at update time. `self-update`
 uses those credentials through `gh release download`; no token is stored in the
 tool configuration. Public releases use the HTTPS downloader without GitHub CLI
 authentication.
+
+## Commit Messages
+
+Use Conventional Commits for every change that will be committed:
+
+```text
+type(optional-scope): short imperative description
+```
+
+Use `feat` for user-facing functionality, `fix` for bug fixes, `docs` for
+documentation, `ci` for workflows, `test` for tests, `refactor` for behavior-
+preserving code changes, and `chore` for maintenance. Mark breaking changes with
+`!` after the type or scope and explain them in the commit body. These messages
+and pull request titles feed the generated release changelog.
 
 ### Linux and WSL
 

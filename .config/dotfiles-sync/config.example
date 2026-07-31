@@ -2,7 +2,7 @@
 # bin/dotfiles-sync install --remote URL [--branch NAME]
 REMOTE="git@github.com:YOUR_USER/dotfiles.git"
 # Set this to a preferred branch. install detects the remote default when omitted.
-BRANCH=master
+BRANCH=
 POLL_INTERVAL=21600
 APPLY_MODE=manual
 DOTFILES_ROOT=.

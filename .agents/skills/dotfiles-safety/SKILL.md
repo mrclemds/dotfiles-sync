@@ -24,6 +24,8 @@ Apply this skill to all dotfiles and updater work.
 - Keep generated state under the configured XDG state directory.
 - Updater configuration belongs under `.config/dotfiles-sync/` in the
   repository and `~/.config/dotfiles-sync/` at runtime.
+- When asked to commit, use Conventional Commits:
+  `type(optional-scope): short imperative description`.
 
 ## Update Lifecycle
 
