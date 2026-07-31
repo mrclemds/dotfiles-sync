@@ -120,6 +120,8 @@ jobs:
           printf 'latest=%s\n' "$latest" >> "$GITHUB_OUTPUT"
 
       - name: Build release archive
+        env:
+          TAG: ${{ github.ref_name }}
         run: |
           set -eu
           rm -rf dist/package
