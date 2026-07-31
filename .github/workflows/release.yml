@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Version tag to create, such as v1 or v1.2.3 (must start with v)
+        description: Version tag to create, such as v1.0.0 or v1.2.3 (must start with v)
         required: true
         type: string
 
@@ -61,6 +61,10 @@ jobs:
               major=${version%%.*}
               minor_and_patch=${version#*.}
               minor=${minor_and_patch%%.*}
+              patch=${minor_and_patch#*.}
+              if [ "$patch" = "$minor_and_patch" ]; then
+                patch=
+              fi
               minor_branch="release/v${major}.${minor}"
               major_branch="release/v${major}"
               if git ls-remote --exit-code --heads origin "refs/heads/$minor_branch" >/dev/null 2>&1; then
@@ -68,10 +72,15 @@ jobs:
               elif git ls-remote --exit-code --heads origin "refs/heads/$major_branch" >/dev/null 2>&1; then
                 branch=$major_branch
               else
-                printf 'No maintenance branch exists for %s; create %s on demand\n' "$TAG" "$minor_branch" >&2
-                exit 1
+                if [ "$minor" = 0 ] && [ "$patch" = 0 ]; then
+                  branch=$major_branch
+                  create_branch=yes
+                else
+                  printf 'No maintenance branch exists for %s; create %s on demand\n' "$TAG" "$minor_branch" >&2
+                  exit 1
+                fi
               fi
-              create_branch=no
+              : "${create_branch:=no}"
               ;;
             *)
               branch="release/v${version}"
@@ -98,13 +107,18 @@ jobs:
         run: |
           set -eu
           if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
-            printf 'Release tag already exists: %s\n' "$TAG" >&2
-            exit 1
+            git fetch --quiet origin "refs/tags/$TAG:refs/tags/$TAG"
+            if [ "$(git rev-parse "$TAG^{}")" != "$GITHUB_SHA" ]; then
+              printf 'Release tag %s does not point to %s\n' "$TAG" "$GITHUB_SHA" >&2
+              exit 1
+            fi
+            printf 'Reusing release tag: %s\n' "$TAG"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$TAG" -m "$TAG" "$GITHUB_SHA"
+            git push origin "refs/tags/$TAG"
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG" -m "$TAG" "$GITHUB_SHA"
-          git push origin "refs/tags/$TAG"
 
       - name: Create maintenance branch
         env:
