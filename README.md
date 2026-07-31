@@ -260,9 +260,12 @@ branch.
 
 The first `v1` release creates a `release/v1` maintenance branch from `main`.
 Minor and patch releases prefer an existing `release/v1.2` branch; when it does
-not exist, they use `release/v1`. Create a minor-specific branch explicitly when
-that line needs to diverge. The `release/*` namespace is reserved for maintenance
-branches and can be used by workflow triggers and branch-protection rules.
+not exist, they use `release/v1`. To begin a diverging minor line, run the
+`Create Minor Maintenance Branch` workflow from `release/v1` with `v1.2`; it
+creates `release/v1.2` from the current major maintenance head. Then run the
+`Release` workflow from `release/v1.2` with `v1.2`. The `release/*` namespace is
+reserved for maintenance branches and can be used by workflow triggers and
+branch-protection rules.
 
 Minor and patch releases must be reachable from their selected maintenance
 branch; the workflow rejects releases cut from `main`. Major releases may create
