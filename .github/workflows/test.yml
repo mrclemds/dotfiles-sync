@@ -24,10 +24,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --yes shellcheck
 
       - name: Validate shell syntax
-        run: sh -n bin/dotfiles-sync tests/test_dotfiles_sync.sh .github/scripts/release-version.sh
+        run: sh -n bin/dotfiles-sync bin/install-dotfiles-sync tests/test_dotfiles_sync.sh .github/scripts/release-version.sh
 
       - name: Lint shell scripts
-        run: shellcheck -x bin/dotfiles-sync tests/test_dotfiles_sync.sh .github/scripts/release-version.sh
+        run: shellcheck -x bin/dotfiles-sync bin/install-dotfiles-sync tests/test_dotfiles_sync.sh .github/scripts/release-version.sh
 
       - name: Run updater tests
         run: sh tests/test_dotfiles_sync.sh
