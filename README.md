@@ -105,20 +105,20 @@ Existing files require an interactive overwrite confirmation. Non-interactive
 runs optimistically proceed when no overwrite is needed. If an overwrite would
 be required, they stop before changing anything and print a signature. Rerun
 with that signature to prove the overwrite was reviewed. `--overwrite` is not a
-supported option. Commit messages are prompted by default, or can be
-supplied/generated:
+supported option. Commit messages are prompted by default. Set
+`INTERACTIVE_AUTO_MESSAGE=yes` in the runtime config to generate them only for
+interactive terminal sessions. Non-interactive callers must supply a message:
 
 ```sh
 dotfiles-sync store --message "Update OpenCode configuration" FILE...
-dotfiles-sync store --auto-message FILE...
 ```
 
 For an explicit preview, use:
 
 ```sh
-dotfiles-sync store --dry-run --non-interactive --auto-message FILE...
+dotfiles-sync store --dry-run --non-interactive --message "Update configuration" FILE...
 dotfiles-sync store --non-interactive --confirm-overwrite SIGNATURE \
-  --auto-message FILE...
+  --message "Update configuration" FILE...
 ```
 
 The first command prints `OVERWRITE_TOKEN=...` when replacement is needed. The
@@ -145,7 +145,7 @@ interactive confirmation or a dry-run token in non-interactive mode:
 ```sh
 dotfiles-sync remove --dry-run --non-interactive --remove-original ~/.config/opencode/obsolete.json
 dotfiles-sync remove --non-interactive --confirm-remove TOKEN --remove-original \
-  --auto-message ~/.config/opencode/obsolete.json
+  --message "Remove obsolete OpenCode configuration" ~/.config/opencode/obsolete.json
 ```
 
 `remove` accepts files only, requires paths under `$HOME`, and refuses untracked
@@ -163,6 +163,12 @@ use a branch other than the remote default:
 
 ```sh
 bin/dotfiles-sync install --remote git@github.com:YOUR_USER/dotfiles.git
+```
+
+With an authenticated GitHub CLI, install the latest release in one command:
+
+```sh
+tmp=$(mktemp -d) && gh release download --repo mrclemds/dotfiles-sync --pattern dotfiles-sync.tgz --dir "$tmp" && tar -xzf "$tmp/dotfiles-sync.tgz" -C "$tmp" && "$tmp/dotfiles-sync/bin/dotfiles-sync" install --remote git@github.com:YOUR_USER/dotfiles.git && rm -rf "$tmp"
 ```
 
 When run from a terminal, `install` prompts for the repository URL if `--remote`
@@ -190,8 +196,9 @@ The tracked configuration example is:
 
 Configure `REMOTE`, `BRANCH`, `POLL_INTERVAL`, `APPLY_MODE`, `IGNORE_FILE`,
 and `AFTER_APPLY_HOOK`. `IGNORE_FILE` and a non-empty `AFTER_APPLY_HOOK` must
-be absolute paths; the hook must be under `$HOME`. The dotfiles checkout is
-always `dotfiles/` below the deployed tool directory; do not
+expand to absolute paths; the hook must be under `$HOME`. Runtime config is
+POSIX shell syntax, so `$HOME` and fallback forms such as `${HOME:-/test}` are
+supported. The dotfiles checkout is always `dotfiles/` below the deployed tool directory; do not
 put secrets or machine-specific files in it.
 
 For compatibility, the legacy relative conventional hook path is normalized in
@@ -241,15 +248,15 @@ versions ahead. The workflow retains the two newest migration scripts and opens
 cleanup pull requests for older ones on `main` and the matching `release/*`
 branch.
 
-The first `v1` tag creates a `release/v1` maintenance branch. The first `v1.2`
-or `v1.2.3` tag similarly creates a `release/v1.2` branch. Later tags leave an
-existing maintenance branch unchanged so patch fixes can be delivered from that
-branch. The `release/*` namespace is reserved for maintenance branches and can
-be used by workflow triggers and branch-protection rules.
+The first `v1` tag creates a `release/v1` maintenance branch from `main`. Minor
+and patch tags prefer an existing `release/v1.2` branch; when it does not exist,
+they use `release/v1`. Create a minor-specific branch explicitly when that line
+needs to diverge. The `release/*` namespace is reserved for maintenance branches
+and can be used by workflow triggers and branch-protection rules.
 
-The tag that creates a maintenance branch must be reachable from `main`. Later
-patch tags, such as `v1.2.1`, must already be reachable from their maintenance
-branch (`release/v1.2`); the workflow rejects patch releases cut from `main`.
+Minor and patch tags must be reachable from their selected maintenance branch;
+the workflow rejects releases cut from `main`. Major tags may create their major
+maintenance branch from `main`.
 
 ### Backports
 

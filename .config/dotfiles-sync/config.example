@@ -5,6 +5,10 @@ REMOTE="git@github.com:YOUR_USER/dotfiles.git"
 BRANCH=
 POLL_INTERVAL=21600
 APPLY_MODE=manual
+# Generate store/remove commit messages only for interactive terminal sessions.
+INTERACTIVE_AUTO_MESSAGE=no
+# Path values are POSIX shell expressions and must expand to absolute paths.
+# Example fallback syntax: ${HOME:-/test}/.config/dotfiles-sync/ignore
 IGNORE_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles-sync/ignore"
-# Absolute path under $HOME. The hook is run with sh after a revision is applied.
+# Run this managed hook after a successful apply; set empty to disable it.
 AFTER_APPLY_HOOK="${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles-sync/after-apply"

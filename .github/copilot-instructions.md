@@ -39,6 +39,8 @@ GitHub Codespaces.
   staging or applying, and keep those paths in `.gitignore` too.
 - Treat `store` as an explicit import from `$HOME`; validate containment,
   confirm overwrites, and do not push from `store` itself.
+- Non-interactive `store` and `remove` calls must provide `--message`; never use
+  generated commit messages for agent actions.
 - Non-interactive `store` may proceed only without overwrites, or after a
   dry-run overwrite token is explicitly supplied; never use an overwrite bypass.
 - `sync` is the bidirectional pull/push operation; `check` only refreshes and

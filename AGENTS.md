@@ -39,6 +39,8 @@ deploy across multiple machines.
 - `store` is the explicit operation that copies files from `$HOME` into the
   configured dotfiles root and creates a commit; it must validate that sources are
   inside `$HOME`.
+- Non-interactive `store` and `remove` calls must provide `--message`; do not use
+  generated commit messages for agent actions.
 - Configured dotfiles updates must be fast-forward only and dirty checkouts must
   be rejected.
 - CLI self-updates must download a validated HTTPS release archive and replace

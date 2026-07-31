@@ -68,6 +68,8 @@ git -C "$TEST_DIR/seed" push origin main >/dev/null
 "$TEST_DIR/tool/bin/dotfiles-sync" install --remote "$TEST_DIR/remote.git" --branch main >/dev/null
 assert_file "$HOME/.local/bin/dotfiles-sync"
 assert_file "$XDG_CONFIG_HOME/dotfiles-sync/config"
+printf '%s\n' 'IGNORE_FILE="${HOME:-/test}/.config/dotfiles-sync/ignore"' \
+    >> "$XDG_CONFIG_HOME/dotfiles-sync/config"
 printf 'one\n' > "$HOME/managed.txt"
 "$HOME/.local/bin/dotfiles-sync" help store > "$TEST_DIR/store-help"
 assert_contains "$TEST_DIR/store-help" 'Usage: dotfiles-sync store [OPTIONS] PATH...'
@@ -75,10 +77,13 @@ assert_contains "$TEST_DIR/store-help" 'Usage: dotfiles-sync store [OPTIONS] PAT
 assert_contains "$TEST_DIR/remove-help" --remove-original
 
 printf 'stored\n' > "$HOME/store.txt"
-"$HOME/.local/bin/dotfiles-sync" store --non-interactive --auto-message "$HOME/store.txt" >/dev/null
+if "$HOME/.local/bin/dotfiles-sync" store --non-interactive --auto-message "$HOME/store.txt" >/dev/null 2>&1; then
+    fail "non-interactive store accepted --auto-message"
+fi
+"$HOME/.local/bin/dotfiles-sync" store --non-interactive --message "test: store file" "$HOME/store.txt" >/dev/null
 assert_file "$XDG_DATA_HOME/dotfiles-sync/dotfiles/store.txt"
 
-"$HOME/.local/bin/dotfiles-sync" remove --non-interactive --auto-message "$HOME/store.txt" >/dev/null
+"$HOME/.local/bin/dotfiles-sync" remove --non-interactive --message "test: remove file" "$HOME/store.txt" >/dev/null
 assert_file "$HOME/store.txt"
 assert_missing "$XDG_DATA_HOME/dotfiles-sync/dotfiles/store.txt"
 git -C "$XDG_DATA_HOME/dotfiles-sync/dotfiles" reset --hard origin/main >/dev/null
@@ -87,7 +92,7 @@ git -C "$XDG_DATA_HOME/dotfiles-sync/dotfiles" reset --hard origin/main >/dev/nu
     > "$TEST_DIR/remove-dry-run"
 token=$(sed -n 's/^REMOVE_TOKEN=//p' "$TEST_DIR/remove-dry-run")
 [ -n "$token" ] || fail "missing removal token"
-"$HOME/.local/bin/dotfiles-sync" remove --non-interactive --auto-message --remove-original \
+"$HOME/.local/bin/dotfiles-sync" remove --non-interactive --message "test: remove original" --remove-original \
     --confirm-remove "$token" "$HOME/managed.txt" >/dev/null
 assert_missing "$HOME/managed.txt"
 assert_file "$XDG_STATE_HOME/dotfiles-sync/backups/removals"/*/managed.txt

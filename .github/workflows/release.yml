@@ -39,16 +39,25 @@ jobs:
               major=${version%%.*}
               minor_and_patch=${version#*.}
               minor=${minor_and_patch%%.*}
-              branch="release/v${major}.${minor}"
+              minor_branch="release/v${major}.${minor}"
+              major_branch="release/v${major}"
+              if git ls-remote --exit-code --heads origin "refs/heads/$minor_branch" >/dev/null 2>&1; then
+                branch=$minor_branch
+              elif git ls-remote --exit-code --heads origin "refs/heads/$major_branch" >/dev/null 2>&1; then
+                branch=$major_branch
+              else
+                printf 'No maintenance branch exists for %s; create %s on demand\n' "$TAG" "$minor_branch" >&2
+                exit 1
+              fi
               ;;
             *) branch="release/v${version}" ;;
           esac
           if git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1; then
             case "$version" in
-              *.*.*)
+              *.*)
                 git fetch --quiet origin "$branch"
                 if ! git merge-base --is-ancestor "$GITHUB_SHA" "origin/$branch"; then
-                  printf 'Patch tag %s must be created from %s\n' "$TAG" "$branch" >&2
+                  printf 'Minor and patch tag %s must be created from %s\n' "$TAG" "$branch" >&2
                   exit 1
                 fi
                 ;;
@@ -108,13 +117,17 @@ jobs:
           current_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null || true)
           case "$current_tag" in
             ''|"$TAG") latest=true ;;
-            v.*|v*..*|v*.|v*.*.*.*|*[!0-9.]*) latest=false ;;
             *)
-              if version_is_greater "$TAG" "$current_tag"; then
-                latest=true
-              else
-                latest=false
-              fi
+              case "${current_tag#v}" in
+                ''|.*|*..*|*.|*.*.*.*|*[!0-9.]*) latest=false ;;
+                *)
+                  if version_is_greater "$TAG" "$current_tag"; then
+                    latest=true
+                  else
+                    latest=false
+                  fi
+                  ;;
+              esac
               ;;
           esac
           printf 'latest=%s\n' "$latest" >> "$GITHUB_OUTPUT"

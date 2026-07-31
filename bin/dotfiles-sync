@@ -81,7 +81,6 @@ Copy regular files from $HOME into the managed repository root and commit them.
 
 Options:
   -m, --message MESSAGE   Commit with MESSAGE.
-  --auto-message          Generate a commit message from stored paths.
   --dry-run               Preview required overwrite confirmation.
   --confirm-overwrite ID  Confirm the ID returned by --dry-run.
   --non-interactive       Do not prompt for a commit message or overwrite.
@@ -96,7 +95,6 @@ Remove tracked regular files from the managed repository and commit the change.
 
 Options:
   -m, --message MESSAGE   Commit with MESSAGE.
-  --auto-message          Generate a commit message from removed paths.
   --remove-original       Remove the matching file from $HOME after committing.
   --dry-run               Preview removal and print a confirmation token.
   --confirm-remove ID     Confirm the ID returned by --dry-run.
@@ -143,6 +141,11 @@ load_config() {
     fi
     : "${POLL_INTERVAL:=21600}"
     : "${APPLY_MODE:=manual}"
+    : "${INTERACTIVE_AUTO_MESSAGE:=no}"
+    case "$INTERACTIVE_AUTO_MESSAGE" in
+        yes|no) ;;
+        *) die "INTERACTIVE_AUTO_MESSAGE must be yes or no" ;;
+    esac
     if [ "${DOTFILES_ROOT+x}" = x ]; then
         die "DOTFILES_ROOT is no longer supported; the managed repository root is fixed"
     fi
@@ -375,7 +378,6 @@ store() {
     load_config
     ensure_dotfiles_checkout
     message=
-    auto_message=no
     dry_run=no
     confirm_token=
     non_interactive=no
@@ -394,10 +396,6 @@ store() {
                 [ "$#" -ge 2 ] || die "$1 requires a message"
                 message=$2
                 shift 2
-                ;;
-            --auto-message)
-                auto_message=yes
-                shift
                 ;;
             --confirm-overwrite)
                 [ "$#" -ge 2 ] || die "--confirm-overwrite requires a signature"
@@ -470,12 +468,11 @@ store() {
     elif [ -n "$confirm_token" ]; then
         die "--confirm-overwrite is only valid when an overwrite is required"
     fi
-    if [ -z "$message" ] && [ "$auto_message" != yes ] \
-        && { [ "$non_interactive" = yes ] || [ ! -t 0 ] || [ ! -t 1 ]; }; then
-        die "non-interactive store requires --message or --auto-message"
+    if [ -z "$message" ] && { [ "$non_interactive" = yes ] || [ ! -t 0 ] || [ ! -t 1 ]; }; then
+        die "non-interactive store requires --message"
     fi
     if [ -z "$message" ]; then
-        if [ "$auto_message" = yes ]; then
+        if [ "$INTERACTIVE_AUTO_MESSAGE" = yes ]; then
             files=$(cut -f 1 "$STORE_PLAN" | tr '\n' ' ')
             message="Updates ${files% }"
         else
@@ -524,7 +521,6 @@ remove() {
     load_config
     ensure_dotfiles_checkout
     message=
-    auto_message=no
     dry_run=no
     confirm_token=
     non_interactive=no
@@ -542,10 +538,6 @@ remove() {
                 [ "$#" -ge 2 ] || die "$1 requires a message"
                 message=$2
                 shift 2
-                ;;
-            --auto-message)
-                auto_message=yes
-                shift
                 ;;
             --remove-original)
                 REMOVE_ORIGINAL=yes
@@ -610,12 +602,11 @@ remove() {
     elif [ -n "$confirm_token" ]; then
         die "--confirm-remove is only valid with --remove-original"
     fi
-    if [ -z "$message" ] && [ "$auto_message" != yes ] \
-        && { [ "$non_interactive" = yes ] || [ ! -t 0 ] || [ ! -t 1 ]; }; then
-        die "non-interactive remove requires --message or --auto-message"
+    if [ -z "$message" ] && { [ "$non_interactive" = yes ] || [ ! -t 0 ] || [ ! -t 1 ]; }; then
+        die "non-interactive remove requires --message"
     fi
     if [ -z "$message" ]; then
-        if [ "$auto_message" = yes ]; then
+        if [ "$INTERACTIVE_AUTO_MESSAGE" = yes ]; then
             files=$(cut -f 1 "$REMOVE_PLAN" | tr '\n' ' ')
             message="Removes ${files% }"
         else
@@ -1040,8 +1031,10 @@ REMOTE=$remote
 BRANCH=$branch
 POLL_INTERVAL=21600
 APPLY_MODE=manual
+# Generate store/remove commit messages only for interactive terminal sessions.
+INTERACTIVE_AUTO_MESSAGE=no
 IGNORE_FILE=$config_dir/ignore
-# Absolute path under HOME. Set empty to disable the default after-apply hook.
+# Run this managed hook after a successful apply; set empty to disable it.
 AFTER_APPLY_HOOK=$config_dir/after-apply
 EOF
         log "created $CONFIG_FILE"

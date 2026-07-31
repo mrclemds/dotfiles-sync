@@ -17,6 +17,7 @@ files from `$HOME` into the repository root, confirms overwrites interactively, 
 without pushing. `sync` is the bidirectional pull/push operation; `check` must
 remain read-only apart from refreshing remote metadata. Preserve
 non-interactive options for agent use, but never make overwrite implicit.
+When using `store` or `remove` non-interactively, always provide `--message`.
 
 When changing behavior:
 
