@@ -740,21 +740,10 @@ self_update() {
         https://*) ;;
         *) die "release URL must use HTTPS: $release_url" ;;
     esac
-    release_path=${release_url#https://github.com/}
-    release_repo=${release_path%%/releases/latest/download/*}
-    release_asset=${release_path##*/}
-    case "$release_path" in
-        "$release_repo"/releases/latest/download/"$release_asset") ;;
-        *) die "release URL must be a GitHub latest-release asset: $release_url" ;;
-    esac
-    case "$release_repo" in
-        ''|/*|*/*/*|*/) die "release URL has an invalid repository: $release_url" ;;
-    esac
     update_dir=$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-sync-update.XXXXXX") || die "could not create update directory"
     trap 'rm -rf "$update_dir"' 0 1 2 3 15
-    archive=$update_dir/$release_asset
-    download_latest_release_archive "$archive"
-    release_dir=$(extract_release_archive "$archive" "$update_dir")
+    release_dir=$("$TOOL_DIR/bin/install-dotfiles-sync" --download-release "$release_url" "$update_dir") \
+        || die "could not download latest release"
     package_version=$(release_directory_version "$release_dir")
     installed_version=$(installed_release_version)
     if version_major_distance_exceeds_two "$package_version" "$installed_version"; then
@@ -780,40 +769,6 @@ self_update() {
             fi
             ;;
     esac
-}
-
-download_latest_release_archive() {
-    archive=$1
-    if command -v curl >/dev/null 2>&1; then
-        curl --fail --location --proto '=https' --tlsv1.2 --output "$archive" "$release_url" || die "could not download release"
-    elif command -v wget >/dev/null 2>&1; then
-        wget -O "$archive" "$release_url" || die "could not download release"
-    else
-        die "self-update requires curl or wget"
-    fi
-    [ -r "$archive" ] || die "release download did not provide $release_asset"
-}
-
-extract_release_archive() {
-    archive=$1
-    destination=$2
-    tar -tzf "$archive" > "$destination/files" || die "invalid release archive"
-    safe_archive=yes
-    while IFS= read -r entry; do
-        case "$entry" in
-            dotfiles-sync/|dotfiles-sync/*)
-                case "$entry" in
-                    ../*|*/../*|*/..) safe_archive=no; break ;;
-                esac
-                ;;
-            *) safe_archive=no; break ;;
-        esac
-    done < "$destination/files"
-    [ "$safe_archive" = yes ] || die "release archive contains unsafe paths"
-    mkdir -p "$destination/extracted"
-    tar -xzf "$archive" -C "$destination/extracted" || die "could not extract release archive"
-    [ -d "$destination/extracted/dotfiles-sync" ] || die "release archive is missing dotfiles-sync"
-    printf '%s\n' "$destination/extracted/dotfiles-sync"
 }
 
 release_directory_version() {

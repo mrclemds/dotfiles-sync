@@ -34,13 +34,21 @@ assert_missing() { [ ! -e "$1" ] || fail "expected missing path: $1"; }
 assert_contains() { grep -F -- "$2" "$1" >/dev/null || fail "expected $2 in $1"; }
 
 mkdir -p "$TEST_DIR/tool/bin" "$TEST_DIR/tool/.config/dotfiles-sync" \
-    "$TEST_DIR/tool/systemd" "$TEST_DIR/bin" "$TEST_DIR/seed" "$TEST_DIR/remote.git"
+    "$TEST_DIR/tool/systemd" "$TEST_DIR/bin" "$TEST_DIR/seed" "$TEST_DIR/remote.git" \
+    "$TEST_DIR/archive/dotfiles-sync/bin"
 cp "$ROOT/bin/dotfiles-sync" "$TEST_DIR/tool/bin/dotfiles-sync"
+cp "$ROOT/bin/install-dotfiles-sync" "$TEST_DIR/tool/bin/install-dotfiles-sync"
 cp "$ROOT/.release-url" "$TEST_DIR/tool/.release-url"
 cp "$ROOT/.config/dotfiles-sync/ignore.example" "$TEST_DIR/tool/.config/dotfiles-sync/ignore.example"
 cp "$ROOT/systemd/dotfiles-sync.service" "$TEST_DIR/tool/systemd/dotfiles-sync.service"
 cp "$ROOT/systemd/dotfiles-sync.timer" "$TEST_DIR/tool/systemd/dotfiles-sync.timer"
-chmod 755 "$TEST_DIR/tool/bin/dotfiles-sync"
+chmod 755 "$TEST_DIR/tool/bin/dotfiles-sync" "$TEST_DIR/tool/bin/install-dotfiles-sync"
+cp "$ROOT/bin/dotfiles-sync" "$TEST_DIR/archive/dotfiles-sync/bin/dotfiles-sync"
+cp "$ROOT/bin/install-dotfiles-sync" "$TEST_DIR/archive/dotfiles-sync/bin/install-dotfiles-sync"
+chmod 755 "$TEST_DIR/archive/dotfiles-sync/bin/dotfiles-sync" \
+    "$TEST_DIR/archive/dotfiles-sync/bin/install-dotfiles-sync"
+printf '%s\n' v1.1.6 > "$TEST_DIR/archive/dotfiles-sync/.release-version"
+tar -C "$TEST_DIR/archive" -czf "$TEST_DIR/release-archive.tgz" dotfiles-sync
 
 cat > "$TEST_DIR/bin/systemctl" <<'EOF'
 #!/bin/sh
@@ -53,9 +61,21 @@ case "${1:-}" in
     -) cat >/dev/null ;;
 esac
 EOF
-chmod 755 "$TEST_DIR/bin/systemctl" "$TEST_DIR/bin/crontab"
+cat > "$TEST_DIR/bin/curl" <<'EOF'
+#!/bin/sh
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --output) output=$2; shift 2 ;;
+        *) shift ;;
+    esac
+done
+cp "$TEST_RELEASE_ARCHIVE" "$output"
+EOF
+chmod 755 "$TEST_DIR/bin/systemctl" "$TEST_DIR/bin/crontab" "$TEST_DIR/bin/curl"
 PATH=$TEST_DIR/bin:$PATH
 export PATH
+TEST_RELEASE_ARCHIVE=$TEST_DIR/release-archive.tgz
+export TEST_RELEASE_ARCHIVE
 
 git config --file "$GIT_CONFIG_GLOBAL" user.name DotfilesSyncTest
 git config --file "$GIT_CONFIG_GLOBAL" user.email dotfiles-sync-test@example.invalid
@@ -78,6 +98,12 @@ version_is_greater v1.1.5 v1.1.2 || fail "newer public release was rejected"
 if version_is_greater v1.0.0 v1.1.2; then
     fail "self-update would downgrade a newer installed release"
 fi
+bootstrap_release=$TEST_DIR/bootstrap-release
+release_dir=$("$TEST_DIR/tool/bin/install-dotfiles-sync" --download-release \
+    https://github.com/mrclemds/dotfiles-sync/releases/latest/download/dotfiles-sync.tgz "$bootstrap_release")
+assert_file "$release_dir/bin/dotfiles-sync"
+[ "$(release_directory_version "$release_dir")" = v1.1.6 ] \
+    || fail "bootstrap selected an invalid release archive"
 git init --bare --initial-branch=main "$TEST_DIR/remote.git" >/dev/null
 git init --initial-branch=main "$TEST_DIR/seed" >/dev/null
 printf 'one\n' > "$TEST_DIR/seed/managed.txt"

@@ -6,24 +6,24 @@ operation by default.
 
 ## Install
 
-Install the latest public release with `curl`, `tar`, and a POSIX shell. This
-command needs no GitHub CLI account or token. It prompts for your dotfiles
-repository URL:
+Install the latest public release with one command. It needs no GitHub CLI
+account or token and prompts for your dotfiles repository URL:
 
 ```sh
-( set -eu; tmp=$(mktemp -d); trap 'rm -rf "$tmp"' 0 1 2 3 15; curl --fail --location --proto '=https' --tlsv1.2 --output "$tmp/dotfiles-sync.tgz" https://github.com/mrclemds/dotfiles-sync/releases/latest/download/dotfiles-sync.tgz; tar -xzf "$tmp/dotfiles-sync.tgz" -C "$tmp"; "$tmp/dotfiles-sync/bin/dotfiles-sync" install )
+curl -fsSL https://github.com/mrclemds/dotfiles-sync/releases/latest/download/install-dotfiles-sync.sh | bash
 ```
 
 For unattended installation, provide the remote explicitly:
 
 ```sh
-( set -eu; tmp=$(mktemp -d); trap 'rm -rf "$tmp"' 0 1 2 3 15; curl --fail --location --proto '=https' --tlsv1.2 --output "$tmp/dotfiles-sync.tgz" https://github.com/mrclemds/dotfiles-sync/releases/latest/download/dotfiles-sync.tgz; tar -xzf "$tmp/dotfiles-sync.tgz" -C "$tmp"; "$tmp/dotfiles-sync/bin/dotfiles-sync" install --remote git@github.com:YOUR_USER/dotfiles.git )
+curl -fsSL https://github.com/mrclemds/dotfiles-sync/releases/latest/download/install-dotfiles-sync.sh | bash -s -- --remote git@github.com:YOUR_USER/dotfiles.git
 ```
 
-The installer needs `git` and chooses the best available user scheduler:
-systemd on Linux, launchd on macOS, then cron or a foreground fallback. It never
-requires root. Use `--branch NAME` when the dotfiles repository should not use
-its remote default branch.
+The bootstrap downloads and validates the release archive before running its
+installer. The installer needs `git` and chooses the best available user
+scheduler: systemd on Linux, launchd on macOS, then cron or a foreground
+fallback. It never requires root. Use `--branch NAME` when the dotfiles
+repository should not use its remote default branch.
 
 ## First Sync
 
@@ -156,10 +156,10 @@ diverging minor line, run `Create Minor Maintenance Branch` from `release/v1`
 with `v1.2`; it creates `release/v1.2`. Then release `v1.2.0` from that branch.
 Patch releases use the matching existing maintenance branch.
 
-Release archives contain only the installer, CLI, GPL-3.0 license, release
+Release archives contain the installer bootstrap, CLI, GPL-3.0 license, release
 metadata, configuration examples, migrations, scheduler templates, and this
-README. Each release has its own archive and generated Conventional Commit
-changelog.
+README. Each release also publishes the standalone `install-dotfiles-sync.sh`
+bootstrap asset and a generated Conventional Commit changelog.
 
 ### Breaking Updates
 
