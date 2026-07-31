@@ -29,6 +29,8 @@ Open pull requests against `main` unless the change is an approved maintenance
 fix for a `release/*` branch. Keep each pull request focused, describe user
 visible behavior and validation, and resolve every review conversation.
 
-`main` and `release/*` require a passing CI run and one approving review before
-merge. Maintainers release only commits that have merged through those protected
+`main` and `release/*` require a passing CI run and resolved review
+conversations before merge. Until a trusted reviewer is added, no approval is
+required; raise the branch ruleset to one approving review when that changes.
+Maintainers release only commits that have merged through those protected
 branches.

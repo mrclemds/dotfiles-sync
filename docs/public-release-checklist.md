@@ -8,13 +8,13 @@ scan and immediately before changing repository visibility.
 Create one active branch ruleset for `main` and `release/**` with these rules:
 
 - Require a pull request before merging.
-- Require one approving review and dismiss stale approvals on new commits.
+- Require zero approving reviews until a trusted reviewer is added. Raise this
+  to one approval and dismiss stale approvals on new commits at that point.
 - Require all review conversations to be resolved.
 - Require the `updater` and `workflows` checks from the `Test` workflow.
 - Require linear history.
 - Block force pushes and branch deletion.
-- Do not grant a routine bypass. A maintainer-authored pull request needs a
-  separate trusted reviewer.
+- Do not grant a routine bypass.
 
 Create a tag ruleset for `v*` that blocks deletion and updates. Release tags
 must be pushed from commits already merged through a protected branch.
