@@ -141,6 +141,7 @@ jobs:
           mkdir -p dist/package
           git archive --format=tar --prefix="dotfiles-sync/" "$GITHUB_SHA" -- \
             .release-url \
+            LICENSE \
             README.md \
             bin/dotfiles-sync \
             .config/dotfiles-sync/config.example \
