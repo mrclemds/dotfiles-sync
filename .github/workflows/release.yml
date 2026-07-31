@@ -15,13 +15,16 @@ jobs:
       contents: write
     env:
       TAG: ${{ inputs.tag }}
+    outputs:
+      maintenance_branch: ${{ steps.release_source.outputs.branch }}
     steps:
       - name: Check out release source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
-      - name: Create maintenance branch
+      - name: Validate release source
+        id: release_source
         run: |
           set -eu
           version=${TAG#v}
@@ -50,35 +53,28 @@ jobs:
                 printf 'No maintenance branch exists for %s; create %s on demand\n' "$TAG" "$minor_branch" >&2
                 exit 1
               fi
+              create_branch=no
               ;;
-            *) branch="release/v${version}" ;;
-          esac
-          if git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1; then
-            case "$version" in
-              *.*)
-                git fetch --quiet origin "$branch"
-                if ! git merge-base --is-ancestor "$GITHUB_SHA" "origin/$branch"; then
-                  printf 'Minor and patch tag %s must be created from %s\n' "$TAG" "$branch" >&2
-                  exit 1
-                fi
-                ;;
-            esac
-            printf 'Maintenance branch already exists: %s\n' "$branch"
-          else
-            base_branch=
-            if git ls-remote --exit-code --heads origin refs/heads/main >/dev/null 2>&1; then
-              git fetch --quiet origin main
-              if git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-                base_branch=main
+            *)
+              branch="release/v${version}"
+              if git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1; then
+                create_branch=no
+              else
+                create_branch=yes
               fi
-            fi
-            if [ -z "$base_branch" ]; then
-              printf 'Initial release tag %s must be created from main\n' "$TAG" >&2
-              exit 1
-            fi
-            git push origin "$GITHUB_SHA:refs/heads/$branch"
-            printf 'Created maintenance branch: %s\n' "$branch"
+              ;;
+          esac
+          if [ "$create_branch" = yes ]; then
+            expected_source=main
+          else
+            expected_source=$branch
           fi
+          if [ "$GITHUB_REF_NAME" != "$expected_source" ]; then
+            printf 'Release %s must run from %s, not %s\n' "$TAG" "$expected_source" "$GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          printf 'branch=%s\n' "$branch" >> "$GITHUB_OUTPUT"
+          printf 'create_branch=%s\n' "$create_branch" >> "$GITHUB_OUTPUT"
 
       - name: Create release tag
         run: |
@@ -91,6 +87,19 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "$TAG" -m "$TAG" "$GITHUB_SHA"
           git push origin "refs/tags/$TAG"
+
+      - name: Create maintenance branch
+        env:
+          BRANCH: ${{ steps.release_source.outputs.branch }}
+          CREATE_BRANCH: ${{ steps.release_source.outputs.create_branch }}
+        run: |
+          set -eu
+          if [ "$CREATE_BRANCH" = yes ]; then
+            git push origin "$GITHUB_SHA:refs/heads/$BRANCH"
+            printf 'Created maintenance branch: %s\n' "$BRANCH"
+          else
+            printf 'Maintenance branch already exists: %s\n' "$BRANCH"
+          fi
 
       - name: Select latest release
         id: release_version
@@ -198,6 +207,7 @@ jobs:
       pull-requests: write
     env:
       TAG: ${{ inputs.tag }}
+      BRANCH: ${{ needs.release.outputs.maintenance_branch }}
     steps:
       - name: Check out release source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -209,12 +219,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
-          version=${TAG#v}
-          case "$version" in
-            *.*) major=${version%%.*}; remainder=${version#*.}; branch="release/v${major}.${remainder%%.*}" ;;
-            *) branch="release/v${version}" ;;
-          esac
-          for target in main "$branch"; do
+          for target in main "$BRANCH"; do
             git fetch --quiet origin "$target"
             cleanup_branch="automation/cleanup-migrations-${TAG#v}-${target#release/}"
             git switch --create "$cleanup_branch" "origin/$target"
