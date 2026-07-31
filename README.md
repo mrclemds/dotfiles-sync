@@ -99,7 +99,6 @@ are resolved from the current directory but must still resolve inside `$HOME`.
 dotfiles-sync store ~/.config/opencode/opencode.json
 dotfiles-sync store ~/.bashrc ~/.zshrc
 dotfiles-sync store ~/.config/opencode/
-dotfiles-sync store --list files-to-store.txt
 ```
 
 Existing files require an interactive overwrite confirmation. Non-interactive

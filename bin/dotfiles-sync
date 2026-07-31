@@ -48,7 +48,6 @@ Store options:
   --dry-run               Preview required overwrite confirmation.
   --confirm-overwrite ID  Confirm the ID returned by --dry-run.
   --non-interactive       Do not prompt for a commit message or overwrite.
-  --list FILE             Read source paths from FILE.
 
 Install options (required only when no runtime config exists):
   -r, --remote URL        Dotfiles repository URL; prompted interactively if omitted.
@@ -151,7 +150,14 @@ validate_stage() {
     stage=$1
     configured_paths | while IFS= read -r path; do
         case "$path" in
-            *.bash|*.bashrc|*.sh) sh -n "$stage/$path" || die "shell validation failed: $path" ;;
+            *.bash|*.bashrc|*.bash_aliases)
+                if command -v bash >/dev/null 2>&1; then
+                    bash -n "$stage/$path" || die "shell validation failed: $path"
+                else
+                    die "bash is required to validate: $path"
+                fi
+                ;;
+            *.sh) sh -n "$stage/$path" || die "shell validation failed: $path" ;;
             *.zsh|*.zshrc)
                 if command -v zsh >/dev/null 2>&1; then
                     zsh -n "$stage/$path" || die "shell validation failed: $path"
@@ -266,6 +272,7 @@ store_path() {
     fi
     source_dir=$(CDPATH=; cd -P "$(dirname "$input")" 2>/dev/null && pwd) || die "path does not exist: $1"
     source=$source_dir/$(basename "$input")
+    [ -e "$source" ] || die "path does not exist: $1"
     [ -f "$source" ] || die "not a regular file: $1"
     case "$source" in
         "$home_real"/*) relative=${source#"$home_real"/} ;;
@@ -290,7 +297,6 @@ store() {
     dry_run=no
     confirm_token=
     non_interactive=no
-    list_file=
     paths_file=$STATE_DIR/store-paths.$$
     STORE_PLAN=$STATE_DIR/store-plan.$$
     STORE_OVERWRITES=$STATE_DIR/store-overwrites.$$
@@ -324,11 +330,6 @@ store() {
                 non_interactive=yes
                 shift
                 ;;
-            --list)
-                [ "$#" -ge 2 ] || die "--list requires a file"
-                list_file=$2
-                shift 2
-                ;;
             --)
                 shift
                 while [ "$#" -gt 0 ]; do
@@ -340,7 +341,6 @@ store() {
             *) printf '%s\n' "$1" >> "$paths_file"; shift ;;
         esac
     done
-    [ -z "$list_file" ] || cat "$list_file" >> "$paths_file" || die "cannot read list: $list_file"
     [ -s "$paths_file" ] || die "store requires at least one path"
     [ -z "$(git -C "$REPO_DIR" status --porcelain)" ] || die "local changes found in $REPO_DIR; refusing to mix store changes"
 
