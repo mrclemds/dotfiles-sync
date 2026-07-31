@@ -18,6 +18,9 @@ deploy across multiple machines.
 - Implement changes on `main` first. For an intentional compatible maintenance
   backport, add `Backport-To: release/vMAJOR[.MINOR]` in the commit body after it
   is ready for the backport workflow; never add it to unrelated future work.
+- Create `release/vMAJOR.MINOR` only when the user explicitly requests a
+  diverging minor maintenance line. A minor version request alone releases from
+  the existing major maintenance branch.
 - Do not commit, push, or create pull requests unless explicitly requested.
 - When shared behavior changes, keep `.github/copilot-instructions.md` and the
   OpenCode files under `.opencode/`, and Codex skills under `.agents/skills/`
