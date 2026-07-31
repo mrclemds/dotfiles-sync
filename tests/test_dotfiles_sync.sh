@@ -61,8 +61,12 @@ git config --file "$GIT_CONFIG_GLOBAL" user.name DotfilesSyncTest
 git config --file "$GIT_CONFIG_GLOBAL" user.email dotfiles-sync-test@example.invalid
 mkdir -p "$TEST_DIR/release"
 printf '%s\n' v1.1.1 > "$TEST_DIR/release/.release-version"
-sed -n '/^release_version_is_valid()/,/^}/p' "$ROOT/bin/dotfiles-sync" > "$TEST_DIR/version-functions"
-sed -n '/^release_directory_version()/,/^}/p' "$ROOT/bin/dotfiles-sync" >> "$TEST_DIR/version-functions"
+{
+    sed -n '/^release_version_is_valid()/,/^}/p' "$ROOT/bin/dotfiles-sync"
+    sed -n '/^release_directory_version()/,/^}/p' "$ROOT/bin/dotfiles-sync"
+    sed -n '/^version_parts()/,/^}/p' "$ROOT/bin/dotfiles-sync"
+    sed -n '/^version_is_greater()/,/^}/p' "$ROOT/bin/dotfiles-sync"
+} > "$TEST_DIR/version-functions"
 # shellcheck source=/dev/null
 . "$TEST_DIR/version-functions"
 [ "$(release_directory_version "$TEST_DIR/release")" = v1.1.1 ] \
@@ -70,6 +74,10 @@ sed -n '/^release_directory_version()/,/^}/p' "$ROOT/bin/dotfiles-sync" >> "$TES
 candidate=v1.1.1
 release_version_is_valid "$candidate" || fail "release version was rejected"
 [ "$candidate" = v1.1.1 ] || fail "release version validation mutated the caller"
+version_is_greater v1.1.5 v1.1.2 || fail "newer public release was rejected"
+if version_is_greater v1.0.0 v1.1.2; then
+    fail "self-update would downgrade a newer installed release"
+fi
 git init --bare --initial-branch=main "$TEST_DIR/remote.git" >/dev/null
 git init --initial-branch=main "$TEST_DIR/seed" >/dev/null
 printf 'one\n' > "$TEST_DIR/seed/managed.txt"

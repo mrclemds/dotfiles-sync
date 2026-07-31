@@ -1,379 +1,212 @@
 # dotfiles-sync
 
-This repository contains the POSIX shell updater for a Git-hosted dotfiles
-repository. It stages changes and can optionally apply them to a user's home
-directory.
+A safe POSIX shell updater for a Git-backed dotfiles repository. It fetches and
+stages changes first; applying them to `$HOME` is a separate, backup-protected
+operation by default.
 
-`dotfiles-sync` is released under the [GNU General Public License v3.0](LICENSE).
-Copyright (C) 2026 mrclemds.
+## Install
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development and pull-request
-requirements, [SECURITY.md](SECURITY.md) for responsible disclosure, and the
-[public-release checklist](docs/public-release-checklist.md) for repository
-security settings.
-
-## Repository Layout
-
-```text
-dotfiles/                        Local checkout of the managed dotfiles repository
-.config/dotfiles-sync/           Updater configuration example
-.config/dotfiles-sync/ignore.example
-                                  Runtime deployment ignore-pattern example
-bin/dotfiles-sync                Updater and installer
-systemd/                         Linux systemd user service and timer
-launchd/                         macOS launch agent template
-.opencode/                       OpenCode agents and skills
-.agents/skills/                  Codex-compatible project skills
-.github/                         GitHub Copilot instructions
-```
-
-Updater configuration belongs under `.config/dotfiles-sync/` in the repository
-and under `~/.config/dotfiles-sync/` at runtime. The configured remote is
-cloned into `dotfiles/`; its repository root contains the managed files.
-
-## Updater
-
-`bin/dotfiles-sync` supports:
-
-```text
-install    Install or repair the command and register a user scheduler
-uninstall  Remove the command, scheduler, and optional runtime configuration
-self-update Download and install the latest CLI release
-store      Copy local HOME files into the repository root, then create a Git commit
-sync       Pull, stage/apply, and push updates in both directions
-check      Fetch remote metadata and report status without pull/apply/push
-apply      Apply the staged update to $HOME
-status     Show applied and pending revisions
-rollback   Restore the most recent backup, or a specified backup
-daemon     Poll continuously in the foreground
-help       Show command usage
-```
-
-The default workflow is safe and manual:
+Install the latest public release with `curl`, `tar`, and a POSIX shell. This
+command needs no GitHub CLI account or token. It prompts for your dotfiles
+repository URL:
 
 ```sh
-bin/dotfiles-sync install --remote git@github.com:YOUR_USER/dotfiles.git
+( set -eu; tmp=$(mktemp -d); trap 'rm -rf "$tmp"' 0 1 2 3 15; curl --fail --location --proto '=https' --tlsv1.2 --output "$tmp/dotfiles-sync.tgz" https://github.com/mrclemds/dotfiles-sync/releases/latest/download/dotfiles-sync.tgz; tar -xzf "$tmp/dotfiles-sync.tgz" -C "$tmp"; "$tmp/dotfiles-sync/bin/dotfiles-sync" install )
+```
+
+For unattended installation, provide the remote explicitly:
+
+```sh
+( set -eu; tmp=$(mktemp -d); trap 'rm -rf "$tmp"' 0 1 2 3 15; curl --fail --location --proto '=https' --tlsv1.2 --output "$tmp/dotfiles-sync.tgz" https://github.com/mrclemds/dotfiles-sync/releases/latest/download/dotfiles-sync.tgz; tar -xzf "$tmp/dotfiles-sync.tgz" -C "$tmp"; "$tmp/dotfiles-sync/bin/dotfiles-sync" install --remote git@github.com:YOUR_USER/dotfiles.git )
+```
+
+The installer needs `git` and chooses the best available user scheduler:
+systemd on Linux, launchd on macOS, then cron or a foreground fallback. It never
+requires root. Use `--branch NAME` when the dotfiles repository should not use
+its remote default branch.
+
+## First Sync
+
+```sh
 dotfiles-sync sync
 dotfiles-sync status
 dotfiles-sync apply
 ```
 
-Use `dotfiles-sync --help` for the complete command reference, including
-`store` options. `install` is idempotent: it refreshes the installed executable
-and scheduler configuration. Use `dotfiles-sync self-update` to download and
-validate the latest CLI release. It does not stage, apply, or push managed
-dotfiles.
+`sync` fetches, fast-forwards, validates, and stages a revision. In the default
+`APPLY_MODE=manual`, it does **not** modify `$HOME`. Review `status`, then run
+`apply` to deploy the staged revision. Every apply creates a rollback-capable
+backup before replacing files.
 
-`sync` never changes `$HOME` in the default `APPLY_MODE=manual` mode. It pulls
-remote fast-forward changes, stages them, and pushes local commits created by
-`store`. It rejects
-dirty checkouts and non-fast-forward updates, copies tracked files from the
-repository root into a revision-specific pending snapshot, and validates the
-staged files before deployment. The path below that root is relative to `$HOME`;
-for example, `.config/opencode/` deploys to `~/.config/opencode/`.
+Managed paths are relative to the dotfiles repository root. For example,
+`.config/opencode/` deploys to `~/.config/opencode/`.
 
-`apply` validates again, creates a rollback-capable backup, writes temporary
-files, and then renames them into place. State and logs are stored under:
+## Everyday Commands
 
-```text
-~/.local/state/dotfiles-sync/
-```
+| Command | Purpose |
+| --- | --- |
+| `dotfiles-sync sync` | Fetch, stage, and push local `store`/`remove` commits. |
+| `dotfiles-sync check` | Report remote status without pull, apply, or push. |
+| `dotfiles-sync status` | Show the applied and pending revisions. |
+| `dotfiles-sync apply` | Deploy the pending revision with a backup. |
+| `dotfiles-sync rollback` | Restore the newest backup. |
+| `dotfiles-sync self-update` | Download the latest public CLI release over HTTPS. |
+| `dotfiles-sync help COMMAND` | Show command-specific help. |
 
-### After-Apply Hook
+`self-update` updates only the deployed CLI under
+`~/.local/share/dotfiles-sync`. It never modifies the source checkout or your
+managed dotfiles repository, and it does not require GitHub CLI authentication.
+It will not downgrade an installation that is newer than the latest published
+release.
 
-When a tracked `.config/dotfiles-sync/after-apply` file is present, `apply`
-validates it with `sh -n`, deploys it with the revision, records the revision as
-applied, and then runs the deployed version with `sh`. This permits a newer
-configuration script to run only after it has been applied. The hook receives
-`DOTFILES_SYNC_REPO_DIR` and `DOTFILES_SYNC_REVISION` in its environment.
+## Managing Files
 
-The hook is absent by default and is never run by `sync`, `check`, or
-`self-update`. It may intentionally change `$HOME`, so keep it small and
-idempotent. Disable the conventional hook path by setting `AFTER_APPLY_HOOK=` in
-`~/.config/dotfiles-sync/config`.
+Use `store` to explicitly import files from `$HOME` into the managed repository:
 
 ```sh
-# Store the script as a managed dotfile.
-dotfiles-sync store ~/.config/dotfiles-sync/after-apply
-```
-
-### Storing Local Changes
-
-Use `store` to copy one or more files, or a directory, from `$HOME` into the
-repository root. Absolute paths are accepted directly; relative paths
-are resolved from the current directory but must still resolve inside `$HOME`.
-
-```sh
-dotfiles-sync store ~/.config/opencode/opencode.json
 dotfiles-sync store ~/.bashrc ~/.zshrc
 dotfiles-sync store ~/.config/opencode/
 ```
 
-Existing files require an interactive overwrite confirmation. Non-interactive
-runs optimistically proceed when no overwrite is needed. If an overwrite would
-be required, they stop before changing anything and print a signature. Rerun
-with that signature to prove the overwrite was reviewed. `--overwrite` is not a
-supported option. Commit messages are prompted by default. Set
-`INTERACTIVE_AUTO_MESSAGE=yes` in the runtime config to generate them only for
-interactive terminal sessions. Non-interactive callers must supply a message:
+`store` accepts only paths inside `$HOME`, requires a clean managed checkout,
+and creates a local Git commit. It does not push; `sync` pushes the reviewed
+commit later. Existing destination files require an interactive overwrite
+confirmation.
+
+For agents and other non-interactive callers, supply a message. If replacement
+is needed, first request a dry run and then pass its confirmation token:
 
 ```sh
-dotfiles-sync store --message "Update OpenCode configuration" FILE...
+dotfiles-sync store --dry-run --non-interactive --message "Update configuration" ~/.config/example/config
+dotfiles-sync store --non-interactive --confirm-overwrite TOKEN --message "Update configuration" ~/.config/example/config
 ```
 
-For an explicit preview, use:
-
-```sh
-dotfiles-sync store --dry-run --non-interactive --message "Update configuration" FILE...
-dotfiles-sync store --non-interactive --confirm-overwrite SIGNATURE \
-  --message "Update configuration" FILE...
-```
-
-The first command prints `OVERWRITE_TOKEN=...` when replacement is needed. The
-second command must provide that exact token. This two-stage flow is intended
-for agents and other non-interactive callers.
-
-`store` requires a clean repository checkout and commits only changes under
-the repository root. It does not push by itself; the next `dotfiles-sync sync` can push the
-commit after it has been reviewed.
-
-### Removing Managed Files
-
-Use `remove` to delete a tracked regular file from the managed repository while
-retaining the original file in `$HOME`:
+Use `remove` to stop managing a tracked regular file while leaving the local
+file in place:
 
 ```sh
 dotfiles-sync remove ~/.config/opencode/obsolete.json
 ```
 
-Use `--remove-original` to remove the matching `$HOME` file only after the
-repository removal commits. That operation backs up the original and requires an
-interactive confirmation or a dry-run token in non-interactive mode:
+Add `--remove-original` only when the local file should also be removed. That
+operation creates a backup and requires an interactive confirmation or a dry-run
+token in non-interactive use.
 
-```sh
-dotfiles-sync remove --dry-run --non-interactive --remove-original ~/.config/opencode/obsolete.json
-dotfiles-sync remove --non-interactive --confirm-remove TOKEN --remove-original \
-  --message "Remove obsolete OpenCode configuration" ~/.config/opencode/obsolete.json
-```
+## Configuration
 
-`remove` accepts files only, requires paths under `$HOME`, and refuses untracked
-paths. Like `store`, it does not push by itself.
+Runtime configuration is stored at `~/.config/dotfiles-sync/config`. The
+installer creates it on first use; the tracked template is
+`.config/dotfiles-sync/config.example`.
 
-Set `APPLY_MODE=automatic` to apply validated updates during polling. The
-default `manual` mode is recommended until the workflow is trusted. `prompt`
-is reserved for integrations that want to notify a user after staging.
+Important settings:
 
-## Installation
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `REMOTE` | required | Git remote for the managed dotfiles repository. |
+| `BRANCH` | remote default | Managed branch. |
+| `APPLY_MODE` | `manual` | `manual`, `automatic`, or integration-reserved `prompt`. |
+| `POLL_INTERVAL` | `21600` | Automatic polling interval in seconds. |
+| `IGNORE_FILE` | runtime ignore file | Positive patterns never staged or applied. |
+| `AFTER_APPLY_HOOK` | conventional path | Optional tracked post-apply POSIX hook. |
 
-Run the installer from an extracted release archive or repository checkout. On
-first installation, provide the dotfiles repository URL. Add `--branch NAME` to
-use a branch other than the remote default:
+Configuration is POSIX shell syntax. Path values must expand to absolute paths;
+for example, `${HOME:-/tmp}/.config/dotfiles-sync/ignore` is valid.
 
-```sh
-bin/dotfiles-sync install --remote git@github.com:YOUR_USER/dotfiles.git
-```
-
-With an authenticated GitHub CLI, install the latest release in one command:
-
-```sh
-tmp=$(mktemp -d) && gh release download --repo mrclemds/dotfiles-sync --pattern dotfiles-sync.tgz --dir "$tmp" && tar -xzf "$tmp/dotfiles-sync.tgz" -C "$tmp" && "$tmp/dotfiles-sync/bin/dotfiles-sync" install --remote git@github.com:YOUR_USER/dotfiles.git && rm -rf "$tmp"
-```
-
-When run from a terminal, `install` prompts for the repository URL if `--remote`
-is omitted. Non-interactive installation requires `--remote`.
-
-It creates `~/.config/dotfiles-sync/config` when needed, deploys the CLI to
-`~/.local/share/dotfiles-sync`, installs `~/.local/bin/dotfiles-sync`, and
-registers the best available user scheduler. It does not require root
-privileges. It is safe to rerun to repair the installation after a path or
-scheduler change; use `dotfiles-sync self-update` to retrieve a newer release.
-
-### Uninstallation
-
-`dotfiles-sync uninstall` disables the scheduler and removes the deployed CLI,
-command wrapper, and runtime state. It asks whether to remove
-`~/.config/dotfiles-sync/`; choose `--keep-config` or `--remove-config` to skip
-that question. Non-interactive uninstalls keep configuration unless
-`--remove-config` is provided.
-
-The tracked configuration example is:
-
-```text
-.config/dotfiles-sync/config.example
-```
-
-Configure `REMOTE`, `BRANCH`, `POLL_INTERVAL`, `APPLY_MODE`, `IGNORE_FILE`,
-and `AFTER_APPLY_HOOK`. `IGNORE_FILE` and a non-empty `AFTER_APPLY_HOOK` must
-expand to absolute paths; the hook must be under `$HOME`. Runtime config is
-POSIX shell syntax, so `$HOME` and fallback forms such as `${HOME:-/test}` are
-supported. The dotfiles checkout is always `dotfiles/` below the deployed tool directory; do not
-put secrets or machine-specific files in it.
-
-For compatibility, the legacy relative conventional hook path is normalized in
-memory until migration `v0.1.3` can rewrite it as an absolute path.
-
-### Ignored Paths
+### Ignore Rules
 
 `~/.config/dotfiles-sync/ignore` contains positive Gitignore-style patterns for
-paths under the repository root that must never be staged or applied by the updater. It supports comments,
-blank lines, and shell-style `*` globs. Negation rules beginning with `!` are
-intentionally unsupported.
+repository-relative paths that must never be staged or applied. It supports
+comments, blank lines, and `*` globs; `!` negation is deliberately unsupported.
+Add the same paths to the managed repository's `.gitignore` so machine-local
+state never reaches Git.
 
-Every ignored pattern should also be present in the managed dotfiles
-repository's `.gitignore`. This keeps machine-local files out of Git and means
-the updater never receives them from a remote checkout. The updater reads
-`IGNORE_FILE`, defaulting to `~/.config/dotfiles-sync/ignore`.
+### After-Apply Hook
+
+When the tracked `.config/dotfiles-sync/after-apply` exists, `apply` validates
+it with `sh -n`, deploys it with the revision, records that revision as applied,
+then runs the deployed hook with `sh`. The hook receives
+`DOTFILES_SYNC_REPO_DIR` and `DOTFILES_SYNC_REVISION`.
+
+Hooks can intentionally change `$HOME`; keep them small and idempotent. They do
+not run during `sync`, `check`, or `self-update`. Disable the conventional path
+with an empty `AFTER_APPLY_HOOK` setting.
+
+## Safety Model
+
+- `check` does not pull, apply, or push.
+- `sync` rejects dirty checkouts and non-fast-forward updates.
+- `sync` stages only tracked repository-root files.
+- `apply` validates staged files, writes through temporary files, and preserves
+  a rollback-capable backup.
+- `store` and `remove` accept only paths inside `$HOME`.
+- Never track credentials, private keys, tokens, or machine-local state.
+
+Set `APPLY_MODE=automatic` only after reviewing and trusting the full workflow.
 
 ## Releases
 
-Run the `Release` workflow from the protected source branch and provide a
-version such as `v1.0.0` or `v1.2.3`. The workflow validates the source, creates the
-annotated tag, and publishes a GitHub Release with a `dotfiles-sync.tgz` asset.
-The version input must begin with `v`, and the exact source commit must already
-have a successful `Test` workflow. Releases are serialized to prevent concurrent
-tag or latest-release updates.
-The archive contains an explicit allowlist of the CLI, GPL-3.0 license, release
-metadata, configuration examples, migration scripts, scheduler templates, and
-README at that tag. It can be downloaded and extracted on a new machine before
-running `bin/dotfiles-sync install --remote ...`.
+Releases are created through the manual `Release` workflow from a protected
+source branch. Supply a full semantic tag such as `v1.0.0` or `v1.2.3`. The
+workflow requires a successful `Test` run for the exact source commit, validates
+the source branch, serializes publication, creates or verifies the tag, and
+publishes `dotfiles-sync.tgz`.
 
-Every release keeps its own `dotfiles-sync.tgz` asset. GitHub's latest-release
-marker changes only when the tag is greater than the current latest version
-using numeric major, minor, and patch ordering.
+The initial `v1.0.0` release creates `release/v1` from `main`. To start a
+diverging minor line, run `Create Minor Maintenance Branch` from `release/v1`
+with `v1.2`; it creates `release/v1.2`. Then release `v1.2.0` from that branch.
+Patch releases use the matching existing maintenance branch.
 
-Each release description is a changelog generated from Conventional Commit
-subjects between the preceding tag and the release tag.
+Release archives contain only the installer, CLI, GPL-3.0 license, release
+metadata, configuration examples, migrations, scheduler templates, and this
+README. Each release has its own archive and generated Conventional Commit
+changelog.
 
 ### Breaking Updates
 
-When an updater release requires a breaking runtime configuration or state
-change, add a POSIX migration script at
-`.config/dotfiles-sync/migrations/vMAJOR.MINOR.PATCH.sh`. The script may modify
-only dotfiles-sync runtime configuration and state, must be idempotent, and must
-pass `sh -n`. It receives absolute `DOTFILES_SYNC_CONFIG_FILE`,
-`DOTFILES_SYNC_CONFIG_DIR`, and `DOTFILES_SYNC_STATE_DIR` environment variables.
+Breaking runtime configuration or state changes require an idempotent POSIX
+migration under `.config/dotfiles-sync/migrations/vMAJOR.MINOR.PATCH.sh`.
+Migrations may change only dotfiles-sync runtime configuration/state and must
+pass `sh -n`. Self-update backs up configuration before running migrations.
 
-`self-update` validates and runs unrecorded migrations from each downloaded
-release before deploying that release. It backs up the runtime configuration and
-aborts the update if a migration fails. Authenticated GitHub CLI updates move
-through intermediate releases when the latest release is more than two major
-versions ahead. The workflow retains the two newest migration scripts and opens
-cleanup pull requests for older ones on `main` and the matching `release/*`
-branch.
-
-The first `v1.0.0` release creates a `release/v1` maintenance branch from `main`.
-Minor and patch releases prefer an existing `release/v1.2` branch; when it does
-not exist, they use `release/v1`. To begin a diverging minor line, run the
-`Create Minor Maintenance Branch` workflow from `release/v1` with `v1.2`; it
-creates `release/v1.2` from the current major maintenance head. Then run the
-`Release` workflow from `release/v1.2` with `v1.2.0`. The `release/*` namespace is
-reserved for maintenance branches and can be used by workflow triggers and
-branch-protection rules.
-
-Minor and patch releases must be reachable from their selected maintenance
-branch; the workflow rejects releases cut from `main`. Major releases may create
-their major maintenance branch from `main`.
+The release workflow keeps the two newest migrations and opens cleanup pull
+requests for older ones. Updates spanning more than two major versions require
+installing an intermediate release first.
 
 ### Backports
 
-Implement fixes on `main` first. To request an intentional backport after the
-commit reaches `main`, include this Conventional Commit trailer in the commit
-body:
+Implement fixes on `main` first. For an intentional compatible maintenance
+backport, add this trailer after the commit reaches `main`:
 
 ```text
 Backport-To: release/v1
 ```
 
-The backport workflow cherry-picks that commit onto an automation branch and
-opens a pull request targeting the requested maintenance branch. Use the trailer
-only for compatible maintenance fixes; it must not be used to automatically
-backport all `main` changes.
+The Backport workflow cherry-picks the commit to an `automation/*` branch and
+opens a pull request for the requested `release/vMAJOR[.MINOR]` target.
 
-`install` deploys the CLI under `~/.local/share/dotfiles-sync` and places a
-wrapper at `~/.local/bin/dotfiles-sync`. Existing installations update through
-`dotfiles-sync self-update`, which downloads the stable release archive over
-HTTPS, validates it, and atomically replaces only that deployed CLI directory.
-It never updates a Git checkout or the configured dotfiles repository.
+## Development
 
-For a private repository, authenticate the GitHub CLI with access to the
-repository (`gh auth login`) or supply `GH_TOKEN` at update time. `self-update`
-uses those credentials through `gh release download`; no token is stored in the
-tool configuration. Public releases use the HTTPS downloader without GitHub CLI
-authentication.
-
-When `install` reuses an existing runtime configuration, it prints a warning and
-does not replace that configuration.
-
-## Commit Messages
-
-Use Conventional Commits for every change that will be committed:
-
-```text
-type(optional-scope): short imperative description
-```
-
-Use `feat` for user-facing functionality, `fix` for bug fixes, `docs` for
-documentation, `ci` for workflows, `test` for tests, `refactor` for behavior-
-preserving code changes, and `chore` for maintenance. Mark breaking changes with
-`!` after the type or scope and explain them in the commit body. These messages
-and pull request titles feed the generated release changelog.
-
-## Testing
-
-Run the isolated updater suite before submitting updater changes:
+Run the isolated updater suite for updater or workflow changes:
 
 ```sh
 sh tests/test_dotfiles_sync.sh
 ```
 
-It validates command help, installation, storing, removal with and without the
-original file, and the manual `sync` then `apply` lifecycle. GitHub Actions runs
-the same suite for pull requests and pushes to `main`, `release/*`, or
-`automation/*`. The automation trigger supplies required checks for backport and
-migration-cleanup pull requests created with `GITHUB_TOKEN`. Extend the suite
-whenever updater behavior changes.
+CI also validates POSIX syntax, ShellCheck, and GitHub Actions workflows on
+pull requests and pushes to `main`, `release/*`, and `automation/*`.
 
-### Linux and WSL
-
-With a working systemd user session, the installer enables
-`dotfiles-sync.timer`. It runs two minutes after boot/login and then every six
-hours.
-
-On WSL without systemd, and on minimal Linux environments, it uses the user's
-crontab when available. If cron is unavailable, it starts a background daemon.
-That fallback must be restarted after the environment stops.
-
-### Containers and Codespaces
-
-Containers and GitHub Codespaces generally do not provide a persistent user
-service. The installer uses cron or the background fallback when available.
-For automatic reinstallation after recreation, invoke the installer from a
-dev-container `postCreateCommand` or startup command.
-
-### macOS
-
-The installer creates and loads a launchd user agent that runs at load and then
-every six hours.
-
-## AI Workspace Support
-
-The repository includes project instructions for multiple coding tools:
+Use Conventional Commit subjects:
 
 ```text
-AGENTS.md                         Shared workspace rules
-.agents/skills/                   Codex project skills
-.opencode/agents/                 OpenCode workspace agents
-.opencode/skills/                 OpenCode skills
-.github/copilot-instructions.md  GitHub Copilot instructions
-.github/instructions/             GitHub Copilot scoped instructions
+type(optional-scope): short imperative description
 ```
 
-The shared rules cover safe deployment, shell portability, secrets handling,
-the staged update lifecycle, and keeping the tool-specific instructions
-aligned.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution requirements,
+[SECURITY.md](SECURITY.md) for private vulnerability reporting, and
+[docs/public-release-checklist.md](docs/public-release-checklist.md) for
+repository security configuration.
 
-## Security and Support
+## License
 
-Only the latest released version is supported. Report vulnerabilities privately
-through [GitHub security advisories](https://github.com/mrclemds/dotfiles-sync/security/advisories/new);
-do not open a public issue for a suspected vulnerability.
+Copyright (C) 2026 mrclemds. Released under the
+[GNU General Public License v3.0](LICENSE).

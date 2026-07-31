@@ -752,74 +752,44 @@ self_update() {
     esac
     update_dir=$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-sync-update.XXXXXX") || die "could not create update directory"
     trap 'rm -rf "$update_dir"' 0 1 2 3 15
-    if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-        latest_tag=$(gh release view --repo "$release_repo" --json tagName --jq .tagName) || die "could not determine the latest release"
-        release_version_is_valid "$latest_tag" || die "latest release has an invalid version: $latest_tag"
-        gh api --paginate "repos/$release_repo/releases?per_page=100" --jq '.[].tag_name' > "$update_dir/releases" \
-            || die "could not list releases"
-        installed_version=$(installed_release_version)
-        package_version=$installed_version
-        while version_is_greater "$latest_tag" "$installed_version"; do
-            next_tag=$(select_next_release "$installed_version" "$latest_tag" "$update_dir/releases")
-            step_dir=$update_dir/$next_tag
-            mkdir -p "$step_dir"
-            archive=$step_dir/$release_asset
-            download_release_archive "$next_tag" "$archive"
-            release_dir=$(extract_release_archive "$archive" "$step_dir")
-            package_version=$(release_directory_version "$release_dir" "$next_tag")
-            [ "$package_version" = "$next_tag" ] || die "release version does not match archive: expected $next_tag, got $package_version"
-            run_migrations "$release_dir" "$step_dir"
-            deploy_tool_source "$release_dir"
-            installed_version=$package_version
-        done
+    archive=$update_dir/$release_asset
+    download_latest_release_archive "$archive"
+    release_dir=$(extract_release_archive "$archive" "$update_dir")
+    package_version=$(release_directory_version "$release_dir")
+    installed_version=$(installed_release_version)
+    if version_major_distance_exceeds_two "$package_version" "$installed_version"; then
+        die "self-update across more than two major versions requires installing an intermediate release"
+    fi
+    if version_is_greater "$package_version" "$installed_version"; then
+        run_migrations "$release_dir" "$update_dir"
+        deploy_tool_source "$release_dir"
+        update_result=updated
     else
-        archive=$update_dir/$release_asset
-        download_release_archive latest "$archive"
-        release_dir=$(extract_release_archive "$archive" "$update_dir")
-        package_version=$(release_directory_version "$release_dir")
-        installed_version=$(installed_release_version)
-        if version_major_distance_exceeds_two "$package_version" "$installed_version"; then
-            die "self-update across more than two major versions requires an authenticated gh CLI"
-        fi
-        if version_is_greater "$package_version" "$installed_version"; then
-            run_migrations "$release_dir" "$update_dir"
-            deploy_tool_source "$release_dir"
-        fi
+        update_result=current
     fi
     install_command
     trap - 0 1 2 3 15
     rm -rf "$update_dir"
-    log "updated CLI to $package_version"
+    case "$update_result" in
+        updated) log "updated CLI to $package_version" ;;
+        *)
+            if version_is_greater "$installed_version" "$package_version"; then
+                log "installed CLI $installed_version is newer than latest published $package_version; not downgrading"
+            else
+                log "CLI is already up to date ($installed_version)"
+            fi
+            ;;
+    esac
 }
 
-download_release_archive() {
-    tag=$1
-    archive=$2
-    archive_dir=$(dirname "$archive")
-    if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-        if [ "$tag" = latest ]; then
-            gh release download --repo "$release_repo" --pattern "$release_asset" --dir "$archive_dir" \
-                || die "could not download release"
-        else
-            gh release download "$tag" --repo "$release_repo" --pattern "$release_asset" --dir "$archive_dir" \
-                || die "could not download release"
-        fi
-    elif command -v curl >/dev/null 2>&1; then
-        if [ "$tag" = latest ]; then
-            url=$release_url
-        else
-            url=https://github.com/$release_repo/releases/download/$tag/$release_asset
-        fi
-        curl --fail --location --proto '=https' --tlsv1.2 --output "$archive" "$url" || die "could not download release"
+download_latest_release_archive() {
+    archive=$1
+    if command -v curl >/dev/null 2>&1; then
+        curl --fail --location --proto '=https' --tlsv1.2 --output "$archive" "$release_url" || die "could not download release"
     elif command -v wget >/dev/null 2>&1; then
-        if [ "$tag" = latest ]; then
-            url=$release_url
-        else
-            url=https://github.com/$release_repo/releases/download/$tag/$release_asset
-        fi
-        wget -O "$archive" "$url" || die "could not download release"
+        wget -O "$archive" "$release_url" || die "could not download release"
     else
-        die "self-update requires an authenticated gh CLI, curl, or wget"
+        die "self-update requires curl or wget"
     fi
     [ -r "$archive" ] || die "release download did not provide $release_asset"
 }
@@ -914,28 +884,6 @@ version_major_distance_exceeds_two() {
     set -- $(version_parts "$2")
     installed_major=$1
     [ $((target_major - installed_major)) -gt 2 ]
-}
-
-select_next_release() {
-    installed_version=$1
-    latest_version=$2
-    releases_file=$3
-    # shellcheck disable=SC2046
-    set -- $(version_parts "$installed_version")
-    maximum_major=$(( $1 + 2 ))
-    next_version=
-    while IFS= read -r candidate; do
-        release_version_is_valid "$candidate" || continue
-        # shellcheck disable=SC2046
-        set -- $(version_parts "$candidate")
-        [ "$1" -le "$maximum_major" ] || continue
-        version_is_greater "$candidate" "$installed_version" || continue
-        if [ -z "$next_version" ] || version_is_greater "$candidate" "$next_version"; then
-            next_version=$candidate
-        fi
-    done < "$releases_file"
-    [ -n "$next_version" ] || die "no supported intermediate release is available between $installed_version and $latest_version"
-    printf '%s\n' "$next_version"
 }
 
 run_migrations() {
