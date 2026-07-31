@@ -42,11 +42,11 @@ cp "$ROOT/.release-url" "$TEST_DIR/tool/.release-url"
 cp "$ROOT/.config/dotfiles-sync/ignore.example" "$TEST_DIR/tool/.config/dotfiles-sync/ignore.example"
 cp "$ROOT/systemd/dotfiles-sync.service" "$TEST_DIR/tool/systemd/dotfiles-sync.service"
 cp "$ROOT/systemd/dotfiles-sync.timer" "$TEST_DIR/tool/systemd/dotfiles-sync.timer"
-chmod 755 "$TEST_DIR/tool/bin/dotfiles-sync" "$TEST_DIR/tool/bin/install-dotfiles-sync"
+[ -x "$ROOT/bin/install-dotfiles-sync" ] || fail "release bootstrap is not executable"
+chmod 755 "$TEST_DIR/tool/bin/dotfiles-sync"
 cp "$ROOT/bin/dotfiles-sync" "$TEST_DIR/archive/dotfiles-sync/bin/dotfiles-sync"
 cp "$ROOT/bin/install-dotfiles-sync" "$TEST_DIR/archive/dotfiles-sync/bin/install-dotfiles-sync"
-chmod 755 "$TEST_DIR/archive/dotfiles-sync/bin/dotfiles-sync" \
-    "$TEST_DIR/archive/dotfiles-sync/bin/install-dotfiles-sync"
+chmod 755 "$TEST_DIR/archive/dotfiles-sync/bin/dotfiles-sync"
 printf '%s\n' v1.1.6 > "$TEST_DIR/archive/dotfiles-sync/.release-version"
 tar -C "$TEST_DIR/archive" -czf "$TEST_DIR/release-archive.tgz" dotfiles-sync
 
