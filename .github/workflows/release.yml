@@ -109,7 +109,7 @@ jobs:
           }
           current_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null || true)
           case "$current_tag" in
-            '') latest=true ;;
+            ''|"$TAG") latest=true ;;
             v.*|v*..*|v*.|v*.*.*.*|*[!0-9.]*) latest=false ;;
             *)
               if version_is_greater "$TAG" "$current_tag"; then
