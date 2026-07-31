@@ -186,14 +186,16 @@ Every release keeps its own `dotfiles-sync.tgz` asset. GitHub's latest-release
 marker changes only when the tag is greater than the current latest version
 using numeric major, minor, and patch ordering.
 
-The first `v1` tag creates a `v1` maintenance branch. The first `v1.2` or
-`v1.2.3` tag similarly creates a `v1.2` branch. Later tags leave an existing
-maintenance branch unchanged so patch fixes can be delivered from that branch.
+The first `v1` tag creates a `release/v1` maintenance branch. The first `v1.2`
+or `v1.2.3` tag similarly creates a `release/v1.2` branch. Later tags leave an
+existing maintenance branch unchanged so patch fixes can be delivered from that
+branch. The `release/*` namespace is reserved for maintenance branches and can
+be used by workflow triggers and branch-protection rules.
+
 The tag that creates a maintenance branch must be reachable from `master` or
-`main`.
-Later patch tags, such as `v1.2.1`, must already be reachable from their
-maintenance branch (`v1.2`); the workflow rejects patch releases cut from
-`master` or `main`.
+`main`. Later patch tags, such as `v1.2.1`, must already be reachable from their
+maintenance branch (`release/v1.2`); the workflow rejects patch releases cut
+from `master` or `main`.
 
 `install` deploys the CLI under `~/.local/share/dotfiles-sync` and places a
 wrapper at `~/.local/bin/dotfiles-sync`. Existing installations update through

@@ -38,9 +38,9 @@ jobs:
               major=${version%%.*}
               minor_and_patch=${version#*.}
               minor=${minor_and_patch%%.*}
-              branch="v${major}.${minor}"
+              branch="release/v${major}.${minor}"
               ;;
-            *) branch="v${version}" ;;
+            *) branch="release/v${version}" ;;
           esac
           if git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1; then
             case "$version" in
