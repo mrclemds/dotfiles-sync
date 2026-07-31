@@ -21,7 +21,7 @@ log() {
 die() { log "ERROR: $*" >&2; exit 1; }
 
 tool_dir() {
-    CDPATH= cd -- "$(dirname "$0")/.." && pwd
+    CDPATH='' cd -- "$(dirname "$0")/.." && pwd
 }
 
 show_help() {
@@ -892,8 +892,11 @@ version_parts() {
 version_is_greater() {
     candidate=$1
     current=$2
+    # version_parts produces three trusted numeric fields.
+    # shellcheck disable=SC2046
     set -- $(version_parts "$candidate")
     candidate_major=$1 candidate_minor=$2 candidate_patch=$3
+    # shellcheck disable=SC2046
     set -- $(version_parts "$current")
     current_major=$1 current_minor=$2 current_patch=$3
     [ "$candidate_major" -gt "$current_major" ] && return 0
@@ -904,8 +907,10 @@ version_is_greater() {
 }
 
 version_major_distance_exceeds_two() {
+    # shellcheck disable=SC2046
     set -- $(version_parts "$1")
     target_major=$1
+    # shellcheck disable=SC2046
     set -- $(version_parts "$2")
     installed_major=$1
     [ $((target_major - installed_major)) -gt 2 ]
@@ -915,11 +920,13 @@ select_next_release() {
     installed_version=$1
     latest_version=$2
     releases_file=$3
+    # shellcheck disable=SC2046
     set -- $(version_parts "$installed_version")
     maximum_major=$(( $1 + 2 ))
     next_version=
     while IFS= read -r candidate; do
         release_version_is_valid "$candidate" || continue
+        # shellcheck disable=SC2046
         set -- $(version_parts "$candidate")
         [ "$1" -le "$maximum_major" ] || continue
         version_is_greater "$candidate" "$installed_version" || continue
@@ -973,6 +980,7 @@ run_migrations() {
 }
 
 remote_default_branch() {
+    # shellcheck disable=SC2046
     set -- $(git ls-remote --symref "$1" HEAD 2>/dev/null)
     [ "${1:-}" = ref: ] && [ "${3:-}" = HEAD ] || return 1
     case "$2" in
@@ -1021,7 +1029,6 @@ install_sync() {
     mkdir -p "$config_dir" "$STATE_DIR" "$HOME/.local/bin"
     repo_dir=$(tool_dir) || die "could not determine tool directory"
     deploy_tool_source "$repo_dir"
-    script_dir=$INSTALL_DIR/bin
     ignore_example=$INSTALL_DIR/.config/dotfiles-sync/ignore.example
     install_command
     if [ ! -r "$CONFIG_FILE" ]; then
