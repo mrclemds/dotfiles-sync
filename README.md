@@ -201,6 +201,12 @@ wrapper at `~/.local/bin/dotfiles-sync`. Existing installations update through
 HTTPS, validates it, and atomically replaces only that deployed CLI directory.
 It never updates a Git checkout or the configured dotfiles repository.
 
+For a private repository, authenticate the GitHub CLI with access to the
+repository (`gh auth login`) or supply `GH_TOKEN` at update time. `self-update`
+uses those credentials through `gh release download`; no token is stored in the
+tool configuration. Public releases use the HTTPS downloader without GitHub CLI
+authentication.
+
 ### Linux and WSL
 
 With a working systemd user session, the installer enables

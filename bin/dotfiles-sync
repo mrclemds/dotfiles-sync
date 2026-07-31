@@ -510,15 +510,27 @@ self_update() {
         https://*) ;;
         *) die "release URL must use HTTPS: $release_url" ;;
     esac
+    release_path=${release_url#https://github.com/}
+    release_repo=${release_path%%/releases/latest/download/*}
+    release_asset=${release_path##*/}
+    case "$release_path" in
+        "$release_repo"/releases/latest/download/"$release_asset") ;;
+        *) die "release URL must be a GitHub latest-release asset: $release_url" ;;
+    esac
+    case "$release_repo" in
+        ''|/*|*/*/*|*/) die "release URL has an invalid repository: $release_url" ;;
+    esac
     update_dir=$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-sync-update.XXXXXX") || die "could not create update directory"
     trap 'rm -rf "$update_dir"' 0 1 2 3 15
-    archive=$update_dir/dotfiles-sync.tgz
-    if command -v curl >/dev/null 2>&1; then
+    archive=$update_dir/$release_asset
+    if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+        gh release download --repo "$release_repo" --pattern "$release_asset" --dir "$update_dir" || die "could not download release"
+    elif command -v curl >/dev/null 2>&1; then
         curl --fail --location --proto '=https' --tlsv1.2 --output "$archive" "$release_url" || die "could not download release"
     elif command -v wget >/dev/null 2>&1; then
         wget -O "$archive" "$release_url" || die "could not download release"
     else
-        die "self-update requires curl or wget"
+        die "self-update requires an authenticated gh CLI, curl, or wget"
     fi
     tar -tzf "$archive" > "$update_dir/files" || die "invalid release archive"
     safe_archive=yes
