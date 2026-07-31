@@ -28,7 +28,8 @@ When changing behavior:
    migration at `.config/dotfiles-sync/migrations/vMAJOR.MINOR.PATCH.sh`.
 6. Test syntax, validation paths, staging, applying, rollback, and service
    detection where feasible.
-7. Keep `AGENTS.md`, `.github/copilot-instructions.md`, and relevant
+7. Run and extend `tests/test_dotfiles_sync.sh` for updater behavior changes.
+8. Keep `AGENTS.md`, `.github/copilot-instructions.md`, and relevant
    `.opencode/` skills aligned when shared rules change.
 
 When asked to commit, use a Conventional Commit subject:

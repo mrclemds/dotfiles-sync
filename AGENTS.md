@@ -27,6 +27,8 @@ deploy across multiple machines.
 
 - Run `sh -n` and ShellCheck for shell scripts when available.
 - Validate Bash files with `bash -n` and Zsh files with `zsh -n` when available.
+- Run `sh tests/test_dotfiles_sync.sh` for updater behavior changes and extend it
+  with coverage for new behavior.
 - Run `git diff --check` before reporting completion.
 - Review `git status` and the complete diff after edits.
 

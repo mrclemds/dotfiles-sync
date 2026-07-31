@@ -66,6 +66,8 @@ Use `sh -n`, ShellCheck, `bash -n`, `zsh -n`, and `git diff --check` as
 appropriate. For behavior changes, test both the no-update path and a staged
 update path, including failure before any home-directory replacement.
 
+Run and extend `tests/test_dotfiles_sync.sh` for updater behavior changes.
+
 When shared policy changes, update `AGENTS.md`,
 `.github/copilot-instructions.md`, `.agents/skills/`, and the relevant OpenCode
 instructions so Codex, Copilot, and OpenCode remain consistent.

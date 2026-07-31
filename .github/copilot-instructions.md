@@ -60,6 +60,7 @@ Run the relevant checks when available:
 ```sh
 sh -n bin/dotfiles-sync
 shellcheck bin/dotfiles-sync
+sh tests/test_dotfiles_sync.sh
 bash -n .bashrc .bash_aliases
 zsh -n .zshrc
 git diff --check

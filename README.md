@@ -295,6 +295,19 @@ preserving code changes, and `chore` for maintenance. Mark breaking changes with
 `!` after the type or scope and explain them in the commit body. These messages
 and pull request titles feed the generated release changelog.
 
+## Testing
+
+Run the isolated updater suite before submitting updater changes:
+
+```sh
+sh tests/test_dotfiles_sync.sh
+```
+
+It validates command help, installation, storing, removal with and without the
+original file, and the manual `sync` then `apply` lifecycle. GitHub Actions runs
+the same suite for pull requests and pushes to `main` or `release/*`. Extend the
+suite whenever updater behavior changes.
+
 ### Linux and WSL
 
 With a working systemd user session, the installer enables
