@@ -863,12 +863,12 @@ installed_release_version() {
 }
 
 release_version_is_valid() {
-    candidate=${1#v}
+    release_candidate=${1#v}
     case "$1" in
         v*) ;;
         *) return 1 ;;
     esac
-    case "$candidate" in
+    case "$release_candidate" in
         ''|.*|*..*|*.|*.*.*.*|*[!0-9.]*) return 1 ;;
     esac
 }

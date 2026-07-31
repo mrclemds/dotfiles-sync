@@ -57,6 +57,9 @@ sed -n '/^release_directory_version()/,/^}/p' "$ROOT/bin/dotfiles-sync" >> "$TES
 . "$TEST_DIR/version-functions"
 [ "$(release_directory_version "$TEST_DIR/release")" = v1.1.1 ] \
     || fail "release version marker lost its v prefix"
+candidate=v1.1.1
+release_version_is_valid "$candidate" || fail "release version was rejected"
+[ "$candidate" = v1.1.1 ] || fail "release version validation mutated the caller"
 git init --bare --initial-branch=main "$TEST_DIR/remote.git" >/dev/null
 git init --initial-branch=main "$TEST_DIR/seed" >/dev/null
 printf 'one\n' > "$TEST_DIR/seed/managed.txt"
