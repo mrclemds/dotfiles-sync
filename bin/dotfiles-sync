@@ -859,9 +859,9 @@ release_directory_version() {
     release_dir=$1
     fallback_version=${2:-v0.0.0}
     if [ -r "$release_dir/.release-version" ]; then
-        version=$(cat "$release_dir/.release-version")
-        release_version_is_valid "$version" || die "release has an invalid version: $version"
-        printf '%s\n' "$version"
+        release_version=$(cat "$release_dir/.release-version")
+        release_version_is_valid "$release_version" || die "release has an invalid version: $release_version"
+        printf '%s\n' "$release_version"
     else
         printf '%s\n' "$fallback_version"
     fi
@@ -872,12 +872,12 @@ installed_release_version() {
 }
 
 release_version_is_valid() {
-    version=${1#v}
+    candidate=${1#v}
     case "$1" in
         v*) ;;
         *) return 1 ;;
     esac
-    case "$version" in
+    case "$candidate" in
         ''|.*|*..*|*.|*.*.*.*|*[!0-9.]*) return 1 ;;
     esac
 }
