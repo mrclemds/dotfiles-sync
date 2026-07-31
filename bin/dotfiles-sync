@@ -25,6 +25,22 @@ tool_dir() {
 }
 
 show_help() {
+    command=${1:-}
+    case "$command" in
+        '') ;;
+        install) show_install_help; return ;;
+        uninstall) show_uninstall_help; return ;;
+        store) show_store_help; return ;;
+        remove) show_remove_help; return ;;
+        self-update|sync|check|apply|status|rollback|daemon)
+            printf 'Usage: dotfiles-sync %s\n' "$command"
+            return
+            ;;
+        *)
+            printf 'Unknown command: %s\n' "$command" >&2
+            exit 1
+            ;;
+    esac
     cat <<'EOF'
 Usage: dotfiles-sync <command> [options]
 
@@ -43,43 +59,73 @@ Commands:
   store [OPTIONS] PATH... Copy files from $HOME into the repository root and commit.
   remove [OPTIONS] PATH... Remove tracked files from the repository and commit.
   daemon                  Poll continuously in the foreground.
-  help                    Show this help.
+  help [COMMAND]          Show global or command-specific help.
 
-Store options:
+Run `dotfiles-sync help COMMAND` or `dotfiles-sync COMMAND --help` for options.
+
+Safety:
+  sync stages changes but applies them only when APPLY_MODE=automatic; use apply
+  for the default manual mode. self-update downloads and validates a CLI release;
+  it never stages, applies, or pushes dotfiles. install is idempotent and repairs
+  the CLI and scheduler.
+EOF
+    printf 'Configuration: %s\n' "$CONFIG_FILE"
+    printf 'State and logs: %s\n' "$STATE_DIR"
+}
+
+show_store_help() {
+    cat <<'EOF'
+Usage: dotfiles-sync store [OPTIONS] PATH...
+
+Copy regular files from $HOME into the managed repository root and commit them.
+
+Options:
   -m, --message MESSAGE   Commit with MESSAGE.
   --auto-message          Generate a commit message from stored paths.
   --dry-run               Preview required overwrite confirmation.
   --confirm-overwrite ID  Confirm the ID returned by --dry-run.
   --non-interactive       Do not prompt for a commit message or overwrite.
+EOF
+}
 
-Remove options:
+show_remove_help() {
+    cat <<'EOF'
+Usage: dotfiles-sync remove [OPTIONS] PATH...
+
+Remove tracked regular files from the managed repository and commit the change.
+
+Options:
   -m, --message MESSAGE   Commit with MESSAGE.
   --auto-message          Generate a commit message from removed paths.
   --remove-original       Remove the matching file from $HOME after committing.
   --dry-run               Preview removal and print a confirmation token.
   --confirm-remove ID     Confirm the ID returned by --dry-run.
   --non-interactive       Do not prompt for a commit message or home-file removal.
+EOF
+}
 
-Install options (required only when no runtime config exists):
+show_install_help() {
+    cat <<'EOF'
+Usage: dotfiles-sync install [OPTIONS]
+
+Install or repair the CLI and user scheduler.
+
+Options (required only when no runtime config exists):
   -r, --remote URL        Dotfiles repository URL; prompted interactively if omitted.
   -b, --branch NAME       Dotfiles branch; defaults to the remote default branch.
+EOF
+}
 
-Uninstall options:
+show_uninstall_help() {
+    cat <<'EOF'
+Usage: dotfiles-sync uninstall [OPTIONS]
+
+Remove the CLI, scheduler, state, and optionally runtime configuration.
+
+Options:
   --keep-config           Remove the CLI and scheduler without prompting for config cleanup.
   --remove-config         Remove the CLI, scheduler, and runtime config without prompting.
-
-Safety:
-  sync requires a clean checkout and accepts only fast-forward updates. It stages
-  changes but applies them only when APPLY_MODE=automatic; use apply for the
-  default manual mode. self-update downloads and validates a CLI release; it
-  never stages, applies, or pushes dotfiles. install is idempotent and repairs
-  the CLI and scheduler.
-  A tracked .config/dotfiles-sync/after-apply script runs after apply; set
-  AFTER_APPLY_HOOK= in the runtime config to disable it.
-
 EOF
-    printf 'Configuration: %s\n' "$CONFIG_FILE"
-    printf 'State and logs: %s\n' "$STATE_DIR"
 }
 
 load_config() {
@@ -1149,17 +1195,30 @@ daemon() {
 }
 
 case "${1:-sync}" in
-    --help|-h|help) show_help ;;
-    install) shift; install_sync "$@" ;;
-    uninstall) shift; uninstall_sync "$@" ;;
+    --help|-h) show_help ;;
+    help) shift; show_help "${1:-}" ;;
+    install)
+        shift
+        case "${1:-}" in --help|-h) show_install_help ;; *) install_sync "$@" ;; esac
+        ;;
+    uninstall)
+        shift
+        case "${1:-}" in --help|-h) show_uninstall_help ;; *) uninstall_sync "$@" ;; esac
+        ;;
     self-update) self_update ;;
     sync) sync_once ;;
     check) check_once ;;
     apply) apply_pending ;;
     status) show_status ;;
     rollback) rollback "${2:-}" ;;
-    store) shift; store "$@" ;;
-    remove) shift; remove "$@" ;;
+    store)
+        shift
+        case "${1:-}" in --help|-h) show_store_help ;; *) store "$@" ;; esac
+        ;;
+    remove)
+        shift
+        case "${1:-}" in --help|-h) show_remove_help ;; *) remove "$@" ;; esac
+        ;;
     daemon) daemon ;;
     *) die "unknown command: $1 (run: dotfiles-sync --help)" ;;
 esac
