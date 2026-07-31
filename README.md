@@ -229,6 +229,9 @@ the updater never receives them from a remote checkout. The updater reads
 Run the `Release` workflow from the protected source branch and provide a
 version such as `v1` or `v1.2.3`. The workflow validates the source, creates the
 annotated tag, and publishes a GitHub Release with a `dotfiles-sync.tgz` asset.
+The version input must begin with `v`, and the exact source commit must already
+have a successful `Test` workflow. Releases are serialized to prevent concurrent
+tag or latest-release updates.
 The archive contains an explicit allowlist of the CLI, GPL-3.0 license, release
 metadata, configuration examples, migration scripts, scheduler templates, and
 README at that tag. It can be downloaded and extracted on a new machine before
