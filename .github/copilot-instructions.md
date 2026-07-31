@@ -17,6 +17,9 @@ GitHub Codespaces.
 - Implement changes on `main` first. For an intentional compatible maintenance
   backport, add `Backport-To: release/vMAJOR[.MINOR]` in the commit body; do not
   use it for unrelated future work.
+- Create `release/vMAJOR.MINOR` only when the user explicitly requests a
+  diverging minor maintenance line. A minor version request alone releases from
+  the existing major maintenance branch.
 - Do not commit, push, or create pull requests unless explicitly requested.
 
 ## Dotfiles Sync Contract

@@ -27,6 +27,9 @@ Apply this skill to all dotfiles and updater work.
   `type(optional-scope): short imperative description`.
 - Implement fixes on `main` first. Use a `Backport-To: release/vMAJOR[.MINOR]`
   commit trailer only for intentional compatible maintenance backports.
+- Create `release/vMAJOR.MINOR` only when the user explicitly requests a
+  diverging minor maintenance line. A minor version request alone releases from
+  the existing major maintenance branch.
 
 ## Update Lifecycle
 

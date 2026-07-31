@@ -40,5 +40,9 @@ Implement fixes on `main` first. For a requested compatible maintenance
 backport, add `Backport-To: release/vMAJOR[.MINOR]` to the commit body so the
 backport workflow can create a reviewable pull request.
 
+Create `release/vMAJOR.MINOR` only when the user explicitly requests a
+diverging minor maintenance line. A minor version request alone releases from
+the existing major maintenance branch.
+
 Do not enable automatic application by default. Do not commit or push unless
 the user explicitly asks.
