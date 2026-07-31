@@ -1,0 +1,148 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create maintenance branch
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          version=${TAG#v}
+          case "$version" in
+            ''|.*|*..*|*.|*[!0-9.]*)
+              printf 'Unsupported release tag: %s\n' "$TAG" >&2
+              exit 1
+              ;;
+          esac
+          case "$version" in
+            *.*.*.*)
+              printf 'Unsupported release tag: %s\n' "$TAG" >&2
+              exit 1
+              ;;
+            *.*)
+              major=${version%%.*}
+              minor_and_patch=${version#*.}
+              minor=${minor_and_patch%%.*}
+              branch="v${major}.${minor}"
+              ;;
+            *) branch="v${version}" ;;
+          esac
+          if git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1; then
+            case "$version" in
+              *.*.*)
+                git fetch --quiet origin "$branch"
+                if ! git merge-base --is-ancestor "$GITHUB_SHA" "origin/$branch"; then
+                  printf 'Patch tag %s must be created from %s\n' "$TAG" "$branch" >&2
+                  exit 1
+                fi
+                ;;
+            esac
+            printf 'Maintenance branch already exists: %s\n' "$branch"
+          else
+            base_branch=
+            for candidate in master main; do
+              if git ls-remote --exit-code --heads origin "refs/heads/$candidate" >/dev/null 2>&1; then
+                git fetch --quiet origin "$candidate"
+                if git merge-base --is-ancestor "$GITHUB_SHA" "origin/$candidate"; then
+                  base_branch=$candidate
+                  break
+                fi
+              fi
+            done
+            if [ -z "$base_branch" ]; then
+              printf 'Initial release tag %s must be created from master or main\n' "$TAG" >&2
+              exit 1
+            fi
+            git push origin "$GITHUB_SHA:refs/heads/$branch"
+            printf 'Created maintenance branch: %s\n' "$branch"
+          fi
+
+      - name: Select latest release
+        id: release_version
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          version_parts() {
+            value=${1#v}
+            major=${value%%.*}
+            remainder=${value#*.}
+            if [ "$remainder" = "$value" ]; then
+              printf '%s 0 0\n' "$major"
+              return
+            fi
+            minor=${remainder%%.*}
+            patch=${remainder#*.}
+            if [ "$patch" = "$remainder" ]; then
+              patch=0
+            fi
+            printf '%s %s %s\n' "$major" "$minor" "$patch"
+          }
+          version_is_greater() {
+            candidate=$1
+            current=$2
+            set -- $(version_parts "$candidate")
+            candidate_major=$1 candidate_minor=$2 candidate_patch=$3
+            set -- $(version_parts "$current")
+            current_major=$1 current_minor=$2 current_patch=$3
+            [ "$candidate_major" -gt "$current_major" ] && return 0
+            [ "$candidate_major" -lt "$current_major" ] && return 1
+            [ "$candidate_minor" -gt "$current_minor" ] && return 0
+            [ "$candidate_minor" -lt "$current_minor" ] && return 1
+            [ "$candidate_patch" -gt "$current_patch" ]
+          }
+          current_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null || true)
+          case "$current_tag" in
+            '') latest=true ;;
+            v.*|v*..*|v*.|v*.*.*.*|*[!0-9.]*) latest=false ;;
+            *)
+              if version_is_greater "$TAG" "$current_tag"; then
+                latest=true
+              else
+                latest=false
+              fi
+              ;;
+          esac
+          printf 'latest=%s\n' "$latest" >> "$GITHUB_OUTPUT"
+
+      - name: Build release archive
+        id: archive
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          asset="dotfiles-sync-${TAG}.tgz"
+          mkdir -p dist
+          git archive --format=tar --prefix="dotfiles-sync/" "$GITHUB_SHA" | gzip -n > dist/dotfiles-sync.tgz
+          cp dist/dotfiles-sync.tgz "dist/$asset"
+          tar -tzf "dist/$asset" >/dev/null
+          printf 'asset=%s\n' "$asset" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          ASSET: ${{ steps.archive.outputs.asset }}
+          LATEST: ${{ steps.release_version.outputs.latest }}
+        run: |
+          if [ "$LATEST" = true ]; then
+            gh release create "$TAG" "dist/dotfiles-sync.tgz" "dist/$ASSET" --title "$TAG" --generate-notes --latest
+          else
+            gh release create "$TAG" "dist/$ASSET" --title "$TAG" --generate-notes --latest=false
+          fi

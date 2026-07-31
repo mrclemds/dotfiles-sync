@@ -32,7 +32,10 @@ deploy across multiple machines.
 - `store` is the explicit operation that copies files from `$HOME` into the
   configured dotfiles root and creates a commit; it must validate that sources are
   inside `$HOME`.
-- Updates must be fast-forward only and dirty checkouts must be rejected.
+- Configured dotfiles updates must be fast-forward only and dirty checkouts must
+  be rejected.
+- CLI self-updates must download a validated HTTPS release archive and replace
+  only the deployed CLI directory; they must not modify a source checkout.
 - `sync` may pull fast-forward changes and push local commits; `check` must not
   pull, apply, or push.
 - Every apply must retain a rollback-capable backup.

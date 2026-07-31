@@ -29,7 +29,7 @@ cloned into `dotfiles/`; its configured root contains the managed files.
 
 ```text
 install    Install or repair the command and register a user scheduler
-self-update Fast-forward the CLI repository, then reinstall the command
+self-update Download and install the latest CLI release
 store      Copy local HOME files into the configured root, then create a Git commit
 sync       Pull, stage/apply, and push updates in both directions
 check      Fetch remote metadata and report status without pull/apply/push
@@ -51,9 +51,9 @@ dotfiles-sync apply
 
 Use `dotfiles-sync --help` for the complete command reference, including
 `store` options. `install` is idempotent: it refreshes the installed executable
-and scheduler configuration. Use `dotfiles-sync self-update` to update the CLI from
-the configured repository. It requires a clean checkout, fast-forwards only,
-and does not stage, apply, or push managed dotfiles.
+and scheduler configuration. Use `dotfiles-sync self-update` to download and
+validate the latest CLI release. It does not stage, apply, or push managed
+dotfiles.
 
 `sync` never changes `$HOME` in the default `APPLY_MODE=manual` mode. It pulls
 remote fast-forward changes, stages them, and pushes local commits created by
@@ -135,9 +135,9 @@ is reserved for integrations that want to notify a user after staging.
 
 ## Installation
 
-Run the installer from the repository checkout. On first installation, provide
-the dotfiles repository URL. Add `--branch NAME` to use a branch other than the
-remote default:
+Run the installer from an extracted release archive or repository checkout. On
+first installation, provide the dotfiles repository URL. Add `--branch NAME` to
+use a branch other than the remote default:
 
 ```sh
 bin/dotfiles-sync install --remote git@github.com:YOUR_USER/dotfiles.git
@@ -146,11 +146,11 @@ bin/dotfiles-sync install --remote git@github.com:YOUR_USER/dotfiles.git
 When run from a terminal, `install` prompts for the repository URL if `--remote`
 is omitted. Non-interactive installation requires `--remote`.
 
-It creates `~/.config/dotfiles-sync/config` when needed, installs
-`~/.local/bin/dotfiles-sync`, and registers the best available user scheduler.
-It does not require root privileges. It is safe to rerun to repair the
-installation after a path or scheduler change; use `dotfiles-sync self-update` to
-retrieve a newer version from Git.
+It creates `~/.config/dotfiles-sync/config` when needed, deploys the CLI to
+`~/.local/share/dotfiles-sync`, installs `~/.local/bin/dotfiles-sync`, and
+registers the best available user scheduler. It does not require root
+privileges. It is safe to rerun to repair the installation after a path or
+scheduler change; use `dotfiles-sync self-update` to retrieve a newer release.
 
 The tracked configuration example is:
 
@@ -159,8 +159,8 @@ The tracked configuration example is:
 ```
 
 Configure `REMOTE`, `BRANCH`, `POLL_INTERVAL`, `APPLY_MODE`, `DOTFILES_ROOT`,
-and `IGNORE_FILE`. The dotfiles checkout is always `dotfiles/` below the tool
-repository and the default managed root is `.`; do not
+and `IGNORE_FILE`. The dotfiles checkout is always `dotfiles/` below the
+deployed tool directory and the default managed root is `.`; do not
 put secrets or machine-specific files in it.
 
 ### Ignored Paths
@@ -174,6 +174,33 @@ Every ignored pattern should also be present in the managed dotfiles
 repository's `.gitignore`. This keeps machine-local files out of Git and means
 the updater never receives them from a remote checkout. The updater reads
 `IGNORE_FILE`, defaulting to `~/.config/dotfiles-sync/ignore`.
+
+## Releases
+
+Pushing a version tag such as `v1.0.0` creates a GitHub Release with both a
+versioned `dotfiles-sync-v1.0.0.tgz` asset and a stable `dotfiles-sync.tgz`
+asset for the latest release. The archive contains only tracked source files at
+that tag and can be downloaded and extracted on a new machine before running
+`bin/dotfiles-sync install --remote ...`.
+
+Every release keeps its versioned archive. The stable archive and GitHub's
+latest-release marker change only when the tag is greater than the current
+latest version using numeric major, minor, and patch ordering.
+
+The first `v1` tag creates a `v1` maintenance branch. The first `v1.2` or
+`v1.2.3` tag similarly creates a `v1.2` branch. Later tags leave an existing
+maintenance branch unchanged so patch fixes can be delivered from that branch.
+The tag that creates a maintenance branch must be reachable from `master` or
+`main`.
+Later patch tags, such as `v1.2.1`, must already be reachable from their
+maintenance branch (`v1.2`); the workflow rejects patch releases cut from
+`master` or `main`.
+
+`install` deploys the CLI under `~/.local/share/dotfiles-sync` and places a
+wrapper at `~/.local/bin/dotfiles-sync`. Existing installations update through
+`dotfiles-sync self-update`, which downloads the stable release archive over
+HTTPS, validates it, and atomically replaces only that deployed CLI directory.
+It never updates a Git checkout or the configured dotfiles repository.
 
 ### Linux and WSL
 

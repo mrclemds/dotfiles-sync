@@ -9,6 +9,7 @@ LOG_FILE=$STATE_DIR/sync.log
 PID_FILE=$STATE_DIR/daemon.pid
 PENDING_DIR=$STATE_DIR/pending
 BACKUP_DIR=$STATE_DIR/backups
+INSTALL_DIR=${XDG_DATA_HOME:-$HOME/.local/share}/dotfiles-sync
 
 log() {
     mkdir -p "$STATE_DIR"
@@ -30,7 +31,7 @@ are stored under its configured root and applied to matching paths under $HOME.
 
 Commands:
   install [OPTIONS]       Install or repair the CLI and user scheduler.
-  self-update             Fast-forward the CLI repository and reinstall the CLI.
+  self-update             Download and install the latest CLI release.
   sync                    Fetch, fast-forward, stage managed files, and push.
   check                   Fetch metadata and report repository status only.
   apply                   Apply the staged revision to $HOME with a backup.
@@ -53,11 +54,11 @@ Install options (required only when no runtime config exists):
   -b, --branch NAME       Dotfiles branch; defaults to the remote default branch.
 
 Safety:
-  sync and self-update require a clean checkout and accept only fast-forward updates.
-  sync stages changes but applies them only when APPLY_MODE=automatic; use apply
-  for the default manual mode. self-update never stages, applies, or pushes
-  dotfiles. install is idempotent and repairs the CLI and scheduler; use
-  self-update for new repository versions.
+  sync requires a clean checkout and accepts only fast-forward updates. It stages
+  changes but applies them only when APPLY_MODE=automatic; use apply for the
+  default manual mode. self-update downloads and validates a CLI release; it
+  never stages, applies, or pushes dotfiles. install is idempotent and repairs
+  the CLI and scheduler.
   A tracked .config/dotfiles-sync/after-apply script runs after apply; set
   AFTER_APPLY_HOOK= in the runtime config to disable it.
 
@@ -461,26 +462,84 @@ sync_once() {
     fi
 }
 
+deploy_tool_source() {
+    source_dir=$1
+    [ -f "$source_dir/bin/dotfiles-sync" ] || die "release is missing bin/dotfiles-sync"
+    [ -r "$source_dir/.release-url" ] || die "release is missing .release-url"
+    [ "$source_dir" = "$INSTALL_DIR" ] && return 0
+    install_parent=$(dirname "$INSTALL_DIR")
+    staging=$INSTALL_DIR.install.$$
+    previous=$INSTALL_DIR.previous.$$
+    mkdir -p "$install_parent"
+    rm -rf "$staging" "$previous"
+    mkdir -p "$staging"
+    if git -C "$source_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        git -C "$source_dir" archive --format=tar HEAD | tar -xf - -C "$staging"
+    else
+        cp -R "$source_dir"/. "$staging"
+    fi
+    sh -n "$staging/bin/dotfiles-sync" || die "release shell validation failed"
+    [ -r "$staging/.release-url" ] || die "release is missing .release-url"
+    if [ -d "$INSTALL_DIR" ]; then
+        mv "$INSTALL_DIR" "$previous" || die "could not preserve current installation"
+    fi
+    if ! mv "$staging" "$INSTALL_DIR"; then
+        [ ! -d "$previous" ] || mv "$previous" "$INSTALL_DIR"
+        die "could not install release"
+    fi
+    rm -rf "$previous"
+}
+
+install_command() {
+    command_dir=$HOME/.local/bin
+    command_path=$command_dir/dotfiles-sync
+    command_tmp=$command_dir/.dotfiles-sync.$$
+    mkdir -p "$command_dir"
+    cat >"$command_tmp" <<EOF
+#!/bin/sh
+exec "$INSTALL_DIR/bin/dotfiles-sync" "\$@"
+EOF
+    chmod 755 "$command_tmp"
+    mv "$command_tmp" "$command_path"
+}
+
 self_update() {
     TOOL_DIR=$(tool_dir) || die "could not determine tool directory"
-    [ -d "$TOOL_DIR/.git" ] || die "tool directory is not a git checkout: $TOOL_DIR"
-    cd "$TOOL_DIR"
-    [ -z "$(git status --porcelain)" ] || die "local changes found in $TOOL_DIR; refusing to self-update"
-    branch=$(git symbolic-ref --quiet --short HEAD) || die "self-update requires a checked out branch"
-    git fetch --quiet origin "$branch"
-    local_head=$(git rev-parse HEAD)
-    remote_head=$(git rev-parse "origin/$branch")
-    if [ "$local_head" = "$remote_head" ]; then
-        log "CLI repository is up to date: $local_head"
-    elif git merge-base --is-ancestor HEAD "origin/$branch"; then
-        git merge --ff-only --quiet "origin/$branch"
-        log "updated CLI repository to $(git rev-parse HEAD)"
-        exec "$TOOL_DIR/bin/dotfiles-sync" install
-    elif git merge-base --is-ancestor "origin/$branch" HEAD; then
-        die "local commits found in $TOOL_DIR; push or resolve them before self-updating"
+    release_url=$(cat "$TOOL_DIR/.release-url" 2>/dev/null) || die "release URL is missing: $TOOL_DIR/.release-url"
+    case "$release_url" in
+        https://*) ;;
+        *) die "release URL must use HTTPS: $release_url" ;;
+    esac
+    update_dir=$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-sync-update.XXXXXX") || die "could not create update directory"
+    trap 'rm -rf "$update_dir"' 0 1 2 3 15
+    archive=$update_dir/dotfiles-sync.tgz
+    if command -v curl >/dev/null 2>&1; then
+        curl --fail --location --proto '=https' --tlsv1.2 --output "$archive" "$release_url" || die "could not download release"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -O "$archive" "$release_url" || die "could not download release"
     else
-        die "local and remote histories diverged; resolve manually in $TOOL_DIR"
+        die "self-update requires curl or wget"
     fi
+    tar -tzf "$archive" > "$update_dir/files" || die "invalid release archive"
+    safe_archive=yes
+    while IFS= read -r entry; do
+        case "$entry" in
+            dotfiles-sync/|dotfiles-sync/*)
+                case "$entry" in
+                    ../*|*/../*|*/..) safe_archive=no; break ;;
+                esac
+                ;;
+            *) safe_archive=no; break ;;
+        esac
+    done < "$update_dir/files"
+    [ "$safe_archive" = yes ] || die "release archive contains unsafe paths"
+    mkdir -p "$update_dir/extracted"
+    tar -xzf "$archive" -C "$update_dir/extracted" || die "could not extract release archive"
+    deploy_tool_source "$update_dir/extracted/dotfiles-sync"
+    install_command
+    trap - 0 1 2 3 15
+    rm -rf "$update_dir"
+    log "updated CLI from $release_url"
 }
 
 remote_default_branch() {
@@ -524,14 +583,11 @@ install_sync() {
     fi
     config_dir=$(dirname "$CONFIG_FILE")
     mkdir -p "$config_dir" "$STATE_DIR" "$HOME/.local/bin"
-    script_dir=$(CDPATH=; cd -- "$(dirname "$0")" && pwd)
     repo_dir=$(tool_dir) || die "could not determine tool directory"
-    ignore_example=$script_dir/../.config/dotfiles-sync/ignore.example
-    cat >"$HOME/.local/bin/dotfiles-sync" <<EOF
-#!/bin/sh
-exec "$repo_dir/bin/dotfiles-sync" "\$@"
-EOF
-    chmod 755 "$HOME/.local/bin/dotfiles-sync"
+    deploy_tool_source "$repo_dir"
+    script_dir=$INSTALL_DIR/bin
+    ignore_example=$INSTALL_DIR/.config/dotfiles-sync/ignore.example
+    install_command
     if [ ! -r "$CONFIG_FILE" ]; then
         cat >"$CONFIG_FILE" <<EOF
 # dotfiles-sync configuration for the managed dotfiles repository.
@@ -552,7 +608,7 @@ EOF
     fi
     load_config
     log "installed $HOME/.local/bin/dotfiles-sync"
-    install_service "$script_dir/.."
+    install_service "$INSTALL_DIR"
 }
 
 install_service() {

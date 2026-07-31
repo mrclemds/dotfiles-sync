@@ -18,7 +18,10 @@ GitHub Codespaces.
 
 - `sync` fetches and stages; in manual mode it must not modify `$HOME`.
 - `apply` is the normal operation that changes managed files in `$HOME`.
-- Accept only fast-forward updates and reject dirty checkouts.
+- Accept only fast-forward updates for the configured dotfiles repository and
+  reject dirty checkouts.
+- CLI self-updates must download a validated HTTPS release archive and replace
+  only the deployed CLI directory; never update a source checkout.
 - Validate staged files before applying them.
 - Keep a rollback-capable backup for every apply.
 - Copy only tracked files under `DOTFILES_ROOT` (default `.`).

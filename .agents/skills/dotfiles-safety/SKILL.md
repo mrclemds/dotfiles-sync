@@ -30,7 +30,8 @@ Apply this skill to all dotfiles and updater work.
 The safe lifecycle is:
 
 1. Check for a clean worktree.
-2. Fetch and accept only a fast-forward update.
+2. For the configured dotfiles repository, fetch and accept only a
+   fast-forward update.
 3. Copy configured files into a revision-specific pending directory.
 4. Validate staged files before deployment.
 5. Back up current destinations.
@@ -40,6 +41,9 @@ The safe lifecycle is:
 Never apply directly from a remote ref or from an unvalidated checkout. Run an
 after-apply hook only when it is tracked, non-ignored, validated, and deployed
 with the applied revision.
+
+CLI self-updates must download a validated HTTPS release archive and atomically
+replace only the deployed CLI directory. They must not modify a source checkout.
 
 ## Shell Portability
 
