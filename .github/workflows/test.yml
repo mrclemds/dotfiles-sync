@@ -15,7 +15,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install --yes shellcheck
+
+      - name: Validate shell syntax
+        run: sh -n bin/dotfiles-sync tests/test_dotfiles_sync.sh
+
+      - name: Lint shell scripts
+        run: shellcheck bin/dotfiles-sync tests/test_dotfiles_sync.sh
 
       - name: Run updater tests
         run: sh tests/test_dotfiles_sync.sh
+
+  workflows:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Install actionlint
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+
+      - name: Lint workflows
+        run: "$(go env GOPATH)/bin/actionlint"
