@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - "release/**"
+      - "automation/**"
 
 permissions:
   contents: read
