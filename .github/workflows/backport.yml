@@ -30,12 +30,16 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          . .github/scripts/release-version.sh
           for commit in $commits; do
             target=$(git show -s --format=%B "$commit" | sed -n 's/^Backport-To: \(release\/v[0-9][0-9.]*\)$/\1/p')
             [ -n "$target" ] || continue
-            version=${target#release/v}
+            version=$(release_version "${target#release/v}") || {
+              printf 'Invalid Backport-To target in %s: %s\n' "$commit" "$target" >&2
+              exit 1
+            }
             case "$version" in
-              ''|.*|*..*|*.|*.*.*.*|*[!0-9.]*)
+              *.*.*)
                 printf 'Invalid Backport-To target in %s: %s\n' "$commit" "$target" >&2
                 exit 1
                 ;;

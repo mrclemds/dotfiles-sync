@@ -325,8 +325,10 @@ sh tests/test_dotfiles_sync.sh
 
 It validates command help, installation, storing, removal with and without the
 original file, and the manual `sync` then `apply` lifecycle. GitHub Actions runs
-the same suite for pull requests and pushes to `main` or `release/*`. Extend the
-suite whenever updater behavior changes.
+the same suite for pull requests and pushes to `main`, `release/*`, or
+`automation/*`. The automation trigger supplies required checks for backport and
+migration-cleanup pull requests created with `GITHUB_TOKEN`. Extend the suite
+whenever updater behavior changes.
 
 ### Linux and WSL
 
