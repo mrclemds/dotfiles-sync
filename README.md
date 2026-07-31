@@ -227,7 +227,7 @@ the updater never receives them from a remote checkout. The updater reads
 ## Releases
 
 Run the `Release` workflow from the protected source branch and provide a
-version such as `v1` or `v1.2.3`. The workflow validates the source, creates the
+version such as `v1.0.0` or `v1.2.3`. The workflow validates the source, creates the
 annotated tag, and publishes a GitHub Release with a `dotfiles-sync.tgz` asset.
 The version input must begin with `v`, and the exact source commit must already
 have a successful `Test` workflow. Releases are serialized to prevent concurrent
@@ -261,12 +261,12 @@ versions ahead. The workflow retains the two newest migration scripts and opens
 cleanup pull requests for older ones on `main` and the matching `release/*`
 branch.
 
-The first `v1` release creates a `release/v1` maintenance branch from `main`.
+The first `v1.0.0` release creates a `release/v1` maintenance branch from `main`.
 Minor and patch releases prefer an existing `release/v1.2` branch; when it does
 not exist, they use `release/v1`. To begin a diverging minor line, run the
 `Create Minor Maintenance Branch` workflow from `release/v1` with `v1.2`; it
 creates `release/v1.2` from the current major maintenance head. Then run the
-`Release` workflow from `release/v1.2` with `v1.2`. The `release/*` namespace is
+`Release` workflow from `release/v1.2` with `v1.2.0`. The `release/*` namespace is
 reserved for maintenance branches and can be used by workflow triggers and
 branch-protection rules.
 
