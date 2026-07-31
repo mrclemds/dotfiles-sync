@@ -163,6 +163,7 @@ jobs:
             LICENSE \
             README.md \
             bin/dotfiles-sync \
+            bin/install-dotfiles-sync \
             .config/dotfiles-sync/config.example \
             .config/dotfiles-sync/ignore.example \
             .config/dotfiles-sync/migrations \
@@ -171,6 +172,8 @@ jobs:
           printf '%s\n' "$TAG" > dist/package/dotfiles-sync/.release-version
           tar -C dist/package -czf dist/dotfiles-sync.tgz dotfiles-sync
           tar -tzf dist/dotfiles-sync.tgz >/dev/null
+          cp dist/package/dotfiles-sync/bin/install-dotfiles-sync dist/install-dotfiles-sync.sh
+          sh -n dist/install-dotfiles-sync.sh
 
       - name: Create release changelog
         run: |
@@ -192,9 +195,9 @@ jobs:
           LATEST: ${{ steps.release_version.outputs.latest }}
         run: |
           if [ "$LATEST" = true ]; then
-            gh release create "$TAG" "dist/dotfiles-sync.tgz" --title "$TAG" --notes-file dist/release-notes.md --latest
+            gh release create "$TAG" "dist/dotfiles-sync.tgz" "dist/install-dotfiles-sync.sh" --title "$TAG" --notes-file dist/release-notes.md --latest
           else
-            gh release create "$TAG" "dist/dotfiles-sync.tgz" --title "$TAG" --notes-file dist/release-notes.md --latest=false
+            gh release create "$TAG" "dist/dotfiles-sync.tgz" "dist/install-dotfiles-sync.sh" --title "$TAG" --notes-file dist/release-notes.md --latest=false
           fi
 
   cleanup-migrations:
