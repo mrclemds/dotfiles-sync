@@ -122,27 +122,20 @@ jobs:
           printf 'latest=%s\n' "$latest" >> "$GITHUB_OUTPUT"
 
       - name: Build release archive
-        id: archive
-        env:
-          TAG: ${{ github.ref_name }}
         run: |
           set -eu
-          asset="dotfiles-sync-${TAG}.tgz"
           mkdir -p dist
           git archive --format=tar --prefix="dotfiles-sync/" "$GITHUB_SHA" | gzip -n > dist/dotfiles-sync.tgz
-          cp dist/dotfiles-sync.tgz "dist/$asset"
-          tar -tzf "dist/$asset" >/dev/null
-          printf 'asset=%s\n' "$asset" >> "$GITHUB_OUTPUT"
+          tar -tzf dist/dotfiles-sync.tgz >/dev/null
 
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
-          ASSET: ${{ steps.archive.outputs.asset }}
           LATEST: ${{ steps.release_version.outputs.latest }}
         run: |
           if [ "$LATEST" = true ]; then
-            gh release create "$TAG" "dist/dotfiles-sync.tgz" "dist/$ASSET" --title "$TAG" --generate-notes --latest
+            gh release create "$TAG" "dist/dotfiles-sync.tgz" --title "$TAG" --generate-notes --latest
           else
-            gh release create "$TAG" "dist/$ASSET" --title "$TAG" --generate-notes --latest=false
+            gh release create "$TAG" "dist/dotfiles-sync.tgz" --title "$TAG" --generate-notes --latest=false
           fi

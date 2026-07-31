@@ -177,15 +177,14 @@ the updater never receives them from a remote checkout. The updater reads
 
 ## Releases
 
-Pushing a version tag such as `v1.0.0` creates a GitHub Release with both a
-versioned `dotfiles-sync-v1.0.0.tgz` asset and a stable `dotfiles-sync.tgz`
-asset for the latest release. The archive contains only tracked source files at
+Pushing a version tag such as `v1.0.0` creates a GitHub Release with a
+`dotfiles-sync.tgz` asset. The archive contains only tracked source files at
 that tag and can be downloaded and extracted on a new machine before running
 `bin/dotfiles-sync install --remote ...`.
 
-Every release keeps its versioned archive. The stable archive and GitHub's
-latest-release marker change only when the tag is greater than the current
-latest version using numeric major, minor, and patch ordering.
+Every release keeps its own `dotfiles-sync.tgz` asset. GitHub's latest-release
+marker changes only when the tag is greater than the current latest version
+using numeric major, minor, and patch ordering.
 
 The first `v1` tag creates a `v1` maintenance branch. The first `v1.2` or
 `v1.2.3` tag similarly creates a `v1.2` branch. Later tags leave an existing
