@@ -4,6 +4,14 @@ This repository contains the POSIX shell updater for a Git-hosted dotfiles
 repository. It stages changes and can optionally apply them to a user's home
 directory.
 
+`dotfiles-sync` is released under the [GNU General Public License v3.0](LICENSE).
+Copyright (C) 2026 mrclemds.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development and pull-request
+requirements, [SECURITY.md](SECURITY.md) for responsible disclosure, and the
+[public-release checklist](docs/public-release-checklist.md) for repository
+security settings.
+
 ## Repository Layout
 
 ```text
@@ -353,3 +361,9 @@ AGENTS.md                         Shared workspace rules
 The shared rules cover safe deployment, shell portability, secrets handling,
 the staged update lifecycle, and keeping the tool-specific instructions
 aligned.
+
+## Security and Support
+
+Only the latest released version is supported. Report vulnerabilities privately
+through [GitHub security advisories](https://github.com/mrclemds/dotfiles-sync/security/advisories/new);
+do not open a public issue for a suspected vulnerability.
