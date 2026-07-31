@@ -41,6 +41,7 @@ Commands:
   status                  Show the configured repository and revision state.
   rollback [BACKUP]       Restore the latest backup, or BACKUP if specified.
   store [OPTIONS] PATH... Copy files from $HOME into the repository root and commit.
+  remove [OPTIONS] PATH... Remove tracked files from the repository and commit.
   daemon                  Poll continuously in the foreground.
   help                    Show this help.
 
@@ -50,6 +51,14 @@ Store options:
   --dry-run               Preview required overwrite confirmation.
   --confirm-overwrite ID  Confirm the ID returned by --dry-run.
   --non-interactive       Do not prompt for a commit message or overwrite.
+
+Remove options:
+  -m, --message MESSAGE   Commit with MESSAGE.
+  --auto-message          Generate a commit message from removed paths.
+  --remove-original       Remove the matching file from $HOME after committing.
+  --dry-run               Preview removal and print a confirmation token.
+  --confirm-remove ID     Confirm the ID returned by --dry-run.
+  --non-interactive       Do not prompt for a commit message or home-file removal.
 
 Install options (required only when no runtime config exists):
   -r, --remote URL        Dotfiles repository URL; prompted interactively if omitted.
@@ -442,6 +451,154 @@ store() {
     done < "$STORE_FILES"
     git -C "$REPO_DIR" commit -m "$message"
     log "stored and committed files; push the repository separately to synchronize other machines"
+}
+
+remove_path() {
+    input=$1
+    home_real=$(CDPATH=; cd -P "$HOME" && pwd)
+    if [ "${input#/}" = "$input" ]; then
+        input=$PWD/$input
+    fi
+    source_dir=$(CDPATH=; cd -P "$(dirname "$input")" 2>/dev/null && pwd) || die "path does not exist: $1"
+    source=$source_dir/$(basename "$input")
+    case "$source" in
+        "$home_real"/*) relative=${source#"$home_real"/} ;;
+        *) die "remove accepts only paths under HOME: $1" ;;
+    esac
+    git -C "$REPO_DIR" ls-files --error-unmatch -- "$relative" >/dev/null 2>&1 \
+        || die "path is not tracked: $relative"
+    [ -f "$REPO_DIR/$relative" ] || die "tracked path is not a regular file: $relative"
+    if [ "$REMOVE_ORIGINAL" = yes ]; then
+        [ -f "$source" ] || die "original file is not a regular file: $1"
+    fi
+    printf '%s\t%s\n' "$relative" "$source" >> "$REMOVE_PLAN"
+}
+
+remove() {
+    load_config
+    ensure_dotfiles_checkout
+    message=
+    auto_message=no
+    dry_run=no
+    confirm_token=
+    non_interactive=no
+    REMOVE_ORIGINAL=no
+    tab=$(printf '\t')
+    mkdir -p "$STATE_DIR"
+    paths_file=$STATE_DIR/remove-paths.$$
+    REMOVE_PLAN=$STATE_DIR/remove-plan.$$
+    trap 'rm -f "$paths_file" "$REMOVE_PLAN"' 0 1 2 3 15
+    : > "$paths_file"
+    : > "$REMOVE_PLAN"
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --message|-m)
+                [ "$#" -ge 2 ] || die "$1 requires a message"
+                message=$2
+                shift 2
+                ;;
+            --auto-message)
+                auto_message=yes
+                shift
+                ;;
+            --remove-original)
+                REMOVE_ORIGINAL=yes
+                shift
+                ;;
+            --confirm-remove)
+                [ "$#" -ge 2 ] || die "--confirm-remove requires a token"
+                confirm_token=$2
+                shift 2
+                ;;
+            --dry-run)
+                dry_run=yes
+                shift
+                ;;
+            --non-interactive)
+                non_interactive=yes
+                shift
+                ;;
+            --)
+                shift
+                while [ "$#" -gt 0 ]; do
+                    printf '%s\n' "$1" >> "$paths_file"
+                    shift
+                done
+                ;;
+            -*) die "unknown remove option: $1" ;;
+            *) printf '%s\n' "$1" >> "$paths_file"; shift ;;
+        esac
+    done
+    [ -s "$paths_file" ] || die "remove requires at least one path"
+    [ -z "$(git -C "$REPO_DIR" status --porcelain)" ] || die "local changes found in $REPO_DIR; refusing to mix removal changes"
+    while IFS= read -r input; do
+        [ -n "$input" ] || continue
+        remove_path "$input"
+    done < "$paths_file"
+    [ -s "$REMOVE_PLAN" ] || die "no tracked files were selected"
+    if [ "$REMOVE_ORIGINAL" = yes ]; then
+        checksum=$(cksum "$REMOVE_PLAN" | cut -d ' ' -f 1)
+        remove_token="dotfiles-sync-remove-$checksum"
+        if [ "$dry_run" = yes ]; then
+            printf 'REMOVE_TOKEN=%s\n' "$remove_token"
+            printf 'Files to remove from the repository and HOME:\n'
+            cut -f 1 "$REMOVE_PLAN"
+            return 0
+        fi
+        if [ "$non_interactive" = yes ] || [ ! -t 0 ] || [ ! -t 1 ]; then
+            [ "$confirm_token" = "$remove_token" ] || die "home removal requires --confirm-remove $remove_token (run --dry-run first)"
+        else
+            while IFS="$tab" read -r relative source; do
+                printf 'Remove %s from HOME after committing? [y/N] ' "$source" > /dev/tty
+                read -r answer < /dev/tty || die "cannot read removal confirmation"
+                case "$answer" in
+                    y|Y|yes|YES) ;;
+                    *) die "home removal declined: $relative" ;;
+                esac
+            done < "$REMOVE_PLAN"
+        fi
+    elif [ "$dry_run" = yes ]; then
+        printf 'Files to remove from the repository:\n'
+        cut -f 1 "$REMOVE_PLAN"
+        return 0
+    elif [ -n "$confirm_token" ]; then
+        die "--confirm-remove is only valid with --remove-original"
+    fi
+    if [ -z "$message" ] && [ "$auto_message" != yes ] \
+        && { [ "$non_interactive" = yes ] || [ ! -t 0 ] || [ ! -t 1 ]; }; then
+        die "non-interactive remove requires --message or --auto-message"
+    fi
+    if [ -z "$message" ]; then
+        if [ "$auto_message" = yes ]; then
+            files=$(cut -f 1 "$REMOVE_PLAN" | tr '\n' ' ')
+            message="Removes ${files% }"
+        else
+            printf 'Commit message: ' > /dev/tty
+            read -r message < /dev/tty || die "cannot read commit message"
+            [ -n "$message" ] || die "commit message cannot be empty"
+        fi
+    fi
+    if [ "$REMOVE_ORIGINAL" = yes ]; then
+        timestamp=$(date '+%Y%m%d%H%M%S')
+        backup=$BACKUP_DIR/removals/$timestamp
+        while IFS="$tab" read -r relative source; do
+            mkdir -p "$backup/$(dirname "$relative")"
+            cp -p "$source" "$backup/$relative"
+        done < "$REMOVE_PLAN"
+    fi
+    while IFS="$tab" read -r relative source; do
+        git -C "$REPO_DIR" rm -- "$relative"
+    done < "$REMOVE_PLAN"
+    git -C "$REPO_DIR" commit -m "$message"
+    if [ "$REMOVE_ORIGINAL" = yes ]; then
+        while IFS="$tab" read -r relative source; do
+            rm "$source"
+            log "removed original $relative"
+        done < "$REMOVE_PLAN"
+        log "removed and committed files; original backup: $backup"
+    else
+        log "removed and committed files; original files were retained"
+    fi
 }
 
 check_once() {
@@ -1002,6 +1159,7 @@ case "${1:-sync}" in
     status) show_status ;;
     rollback) rollback "${2:-}" ;;
     store) shift; store "$@" ;;
+    remove) shift; remove "$@" ;;
     daemon) daemon ;;
     *) die "unknown command: $1 (run: dotfiles-sync --help)" ;;
 esac

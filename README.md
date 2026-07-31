@@ -129,6 +129,28 @@ for agents and other non-interactive callers.
 the repository root. It does not push by itself; the next `dotfiles-sync sync` can push the
 commit after it has been reviewed.
 
+### Removing Managed Files
+
+Use `remove` to delete a tracked regular file from the managed repository while
+retaining the original file in `$HOME`:
+
+```sh
+dotfiles-sync remove ~/.config/opencode/obsolete.json
+```
+
+Use `--remove-original` to remove the matching `$HOME` file only after the
+repository removal commits. That operation backs up the original and requires an
+interactive confirmation or a dry-run token in non-interactive mode:
+
+```sh
+dotfiles-sync remove --dry-run --non-interactive --remove-original ~/.config/opencode/obsolete.json
+dotfiles-sync remove --non-interactive --confirm-remove TOKEN --remove-original \
+  --auto-message ~/.config/opencode/obsolete.json
+```
+
+`remove` accepts files only, requires paths under `$HOME`, and refuses untracked
+paths. Like `store`, it does not push by itself.
+
 Set `APPLY_MODE=automatic` to apply validated updates during polling. The
 default `manual` mode is recommended until the workflow is trusted. `prompt`
 is reserved for integrations that want to notify a user after staging.
@@ -228,6 +250,21 @@ be used by workflow triggers and branch-protection rules.
 The tag that creates a maintenance branch must be reachable from `main`. Later
 patch tags, such as `v1.2.1`, must already be reachable from their maintenance
 branch (`release/v1.2`); the workflow rejects patch releases cut from `main`.
+
+### Backports
+
+Implement fixes on `main` first. To request an intentional backport after the
+commit reaches `main`, include this Conventional Commit trailer in the commit
+body:
+
+```text
+Backport-To: release/v1
+```
+
+The backport workflow cherry-picks that commit onto an automation branch and
+opens a pull request targeting the requested maintenance branch. Use the trailer
+only for compatible maintenance fixes; it must not be used to automatically
+backport all `main` changes.
 
 `install` deploys the CLI under `~/.local/share/dotfiles-sync` and places a
 wrapper at `~/.local/bin/dotfiles-sync`. Existing installations update through
