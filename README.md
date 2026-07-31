@@ -226,11 +226,13 @@ the updater never receives them from a remote checkout. The updater reads
 
 ## Releases
 
-Pushing a version tag such as `v1.0.0` creates a GitHub Release with a
-`dotfiles-sync.tgz` asset. The archive contains an explicit allowlist of the
-CLI, release metadata, configuration examples, migration scripts, scheduler
-templates, and README at that tag. It can be downloaded and extracted on a new
-machine before running `bin/dotfiles-sync install --remote ...`.
+Run the `Release` workflow from the protected source branch and provide a
+version such as `v1` or `v1.2.3`. The workflow validates the source, creates the
+annotated tag, and publishes a GitHub Release with a `dotfiles-sync.tgz` asset.
+The archive contains an explicit allowlist of the CLI, GPL-3.0 license, release
+metadata, configuration examples, migration scripts, scheduler templates, and
+README at that tag. It can be downloaded and extracted on a new machine before
+running `bin/dotfiles-sync install --remote ...`.
 
 Every release keeps its own `dotfiles-sync.tgz` asset. GitHub's latest-release
 marker changes only when the tag is greater than the current latest version
@@ -256,15 +258,15 @@ versions ahead. The workflow retains the two newest migration scripts and opens
 cleanup pull requests for older ones on `main` and the matching `release/*`
 branch.
 
-The first `v1` tag creates a `release/v1` maintenance branch from `main`. Minor
-and patch tags prefer an existing `release/v1.2` branch; when it does not exist,
-they use `release/v1`. Create a minor-specific branch explicitly when that line
-needs to diverge. The `release/*` namespace is reserved for maintenance branches
-and can be used by workflow triggers and branch-protection rules.
+The first `v1` release creates a `release/v1` maintenance branch from `main`.
+Minor and patch releases prefer an existing `release/v1.2` branch; when it does
+not exist, they use `release/v1`. Create a minor-specific branch explicitly when
+that line needs to diverge. The `release/*` namespace is reserved for maintenance
+branches and can be used by workflow triggers and branch-protection rules.
 
-Minor and patch tags must be reachable from their selected maintenance branch;
-the workflow rejects releases cut from `main`. Major tags may create their major
-maintenance branch from `main`.
+Minor and patch releases must be reachable from their selected maintenance
+branch; the workflow rejects releases cut from `main`. Major releases may create
+their major maintenance branch from `main`.
 
 ### Backports
 
