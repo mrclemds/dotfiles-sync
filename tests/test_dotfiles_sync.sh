@@ -20,6 +20,15 @@ fail() {
     exit 1
 }
 
+# shellcheck source=.github/scripts/release-version.sh
+. "$ROOT/.github/scripts/release-version.sh"
+[ "$(release_version v1.2.3)" = 1.2.3 ] || fail "release version parsing failed"
+[ "$(minor_release_version v1.2)" = 1.2 ] || fail "minor release version parsing failed"
+if minor_release_version v1.2.3 >/dev/null; then
+    fail "patch version accepted as minor release"
+fi
+release_version_is_greater v1.2 v1.1 || fail "release version ordering failed"
+
 assert_file() { [ -f "$1" ] || fail "expected file: $1"; }
 assert_missing() { [ ! -e "$1" ] || fail "expected missing path: $1"; }
 assert_contains() { grep -F -- "$2" "$1" >/dev/null || fail "expected $2 in $1"; }

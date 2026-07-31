@@ -1,0 +1,53 @@
+name: Create Minor Maintenance Branch
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Minor version to branch, such as v1.1
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  create-branch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: Check out major maintenance branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Create minor maintenance branch
+        run: |
+          set -eu
+          . .github/scripts/release-version.sh
+          version=$(minor_release_version "$VERSION") || {
+            printf 'Unsupported minor version: %s\n' "$VERSION" >&2
+            exit 1
+          }
+          major=${version%%.*}
+          minor=${version#*.}
+          source="release/v${major}"
+          target="release/v${major}.${minor}"
+          if [ "$GITHUB_REF_NAME" != "$source" ]; then
+            printf 'Run this workflow from %s, not %s\n' "$source" "$GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          git fetch --quiet origin "$source"
+          if [ "$GITHUB_SHA" != "$(git rev-parse "origin/$source")" ]; then
+            printf 'Run this workflow from the current head of %s\n' "$source" >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --heads origin "refs/heads/$target" >/dev/null 2>&1; then
+            printf 'Maintenance branch already exists: %s\n' "$target" >&2
+            exit 1
+          fi
+          git push origin "$GITHUB_SHA:refs/heads/$target"
+          printf 'Created maintenance branch: %s\n' "$target"
