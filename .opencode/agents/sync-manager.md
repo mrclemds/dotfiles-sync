@@ -34,5 +34,9 @@ When changing behavior:
 When asked to commit, use a Conventional Commit subject:
 `type(optional-scope): short imperative description`.
 
+Implement fixes on `main` first. For a requested compatible maintenance
+backport, add `Backport-To: release/vMAJOR[.MINOR]` to the commit body so the
+backport workflow can create a reviewable pull request.
+
 Do not enable automatic application by default. Do not commit or push unless
 the user explicitly asks.

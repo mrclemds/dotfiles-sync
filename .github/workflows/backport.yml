@@ -1,0 +1,65 @@
+name: Backport
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  create-backport-prs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create requested backport pull requests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -eu
+          if [ "$BEFORE" = 0000000000000000000000000000000000000000 ]; then
+            commits=$(git rev-list "$GITHUB_SHA")
+          else
+            commits=$(git rev-list "$BEFORE..$GITHUB_SHA")
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for commit in $commits; do
+            target=$(git show -s --format=%B "$commit" | sed -n 's/^Backport-To: \(release\/v[0-9][0-9.]*\)$/\1/p')
+            [ -n "$target" ] || continue
+            version=${target#release/v}
+            case "$version" in
+              ''|.*|*..*|*.|*.*.*.*|*[!0-9.]*)
+                printf 'Invalid Backport-To target in %s: %s\n' "$commit" "$target" >&2
+                exit 1
+                ;;
+            esac
+            git fetch --quiet origin "$target" || {
+              printf 'Backport target does not exist: %s\n' "$target" >&2
+              exit 1
+            }
+            short_commit=$(git rev-parse --short "$commit")
+            backport_branch="automation/backport-${short_commit}-${version}"
+            if git ls-remote --exit-code --heads origin "refs/heads/$backport_branch" >/dev/null 2>&1; then
+              printf 'Backport branch already exists: %s\n' "$backport_branch"
+              continue
+            fi
+            git switch --create "$backport_branch" "origin/$target"
+            if ! git cherry-pick -x "$commit"; then
+              git cherry-pick --abort || true
+              printf 'Backport conflict for %s into %s\n' "$commit" "$target" >&2
+              exit 1
+            fi
+            git push origin "$backport_branch"
+            subject=$(git show -s --format=%s "$commit")
+            gh pr create --base "$target" --head "$backport_branch" \
+              --title "Backport: $subject" \
+              --body "Automated backport of $commit from main."
+          done

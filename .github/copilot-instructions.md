@@ -14,6 +14,9 @@ GitHub Codespaces.
 - Never silently overwrite user configuration.
 - When creating a commit, use Conventional Commits: `type(optional-scope): short
   imperative description`.
+- Implement changes on `main` first. For an intentional compatible maintenance
+  backport, add `Backport-To: release/vMAJOR[.MINOR]` in the commit body; do not
+  use it for unrelated future work.
 - Do not commit, push, or create pull requests unless explicitly requested.
 
 ## Dotfiles Sync Contract

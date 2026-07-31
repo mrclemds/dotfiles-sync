@@ -15,6 +15,9 @@ deploy across multiple machines.
   allowlists, staging, or an explicit migration.
 - When creating a commit, use Conventional Commits: `type(optional-scope): short
   imperative description`.
+- Implement changes on `main` first. For an intentional compatible maintenance
+  backport, add `Backport-To: release/vMAJOR[.MINOR]` in the commit body after it
+  is ready for the backport workflow; never add it to unrelated future work.
 - Do not commit, push, or create pull requests unless explicitly requested.
 - When shared behavior changes, keep `.github/copilot-instructions.md` and the
   OpenCode files under `.opencode/`, and Codex skills under `.agents/skills/`

@@ -25,6 +25,8 @@ Apply this skill to all dotfiles and updater work.
   repository and `~/.config/dotfiles-sync/` at runtime.
 - When asked to commit, use Conventional Commits:
   `type(optional-scope): short imperative description`.
+- Implement fixes on `main` first. Use a `Backport-To: release/vMAJOR[.MINOR]`
+  commit trailer only for intentional compatible maintenance backports.
 
 ## Update Lifecycle
 
