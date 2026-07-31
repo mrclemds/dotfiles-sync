@@ -24,9 +24,12 @@ GitHub Codespaces.
   reject dirty checkouts.
 - CLI self-updates must download a validated HTTPS release archive and replace
   only the deployed CLI directory; never update a source checkout.
+- For breaking updater runtime-config or state changes, create an idempotent
+  POSIX migration under `.config/dotfiles-sync/migrations/vMAJOR.MINOR.PATCH.sh`.
+  Migrations may modify only updater config/state and must pass `sh -n`.
 - Validate staged files before applying them.
 - Keep a rollback-capable backup for every apply.
-- Copy only tracked files under `DOTFILES_ROOT` (default `.`).
+- Copy only tracked files at the managed repository root.
 - Run an after-apply hook only when it is tracked, non-ignored, validated, and
   deployed with the applied revision.
 - Exclude positive glob patterns from the configured runtime ignore file before

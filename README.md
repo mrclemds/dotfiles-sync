@@ -21,7 +21,7 @@ launchd/                         macOS launch agent template
 
 Updater configuration belongs under `.config/dotfiles-sync/` in the repository
 and under `~/.config/dotfiles-sync/` at runtime. The configured remote is
-cloned into `dotfiles/`; its configured root contains the managed files.
+cloned into `dotfiles/`; its repository root contains the managed files.
 
 ## Updater
 
@@ -31,7 +31,7 @@ cloned into `dotfiles/`; its configured root contains the managed files.
 install    Install or repair the command and register a user scheduler
 uninstall  Remove the command, scheduler, and optional runtime configuration
 self-update Download and install the latest CLI release
-store      Copy local HOME files into the configured root, then create a Git commit
+store      Copy local HOME files into the repository root, then create a Git commit
 sync       Pull, stage/apply, and push updates in both directions
 check      Fetch remote metadata and report status without pull/apply/push
 apply      Apply the staged update to $HOME
@@ -59,8 +59,8 @@ dotfiles.
 `sync` never changes `$HOME` in the default `APPLY_MODE=manual` mode. It pulls
 remote fast-forward changes, stages them, and pushes local commits created by
 `store`. It rejects
-dirty checkouts and non-fast-forward updates, copies tracked files under the
-configured root into a revision-specific pending snapshot, and validates the
+dirty checkouts and non-fast-forward updates, copies tracked files from the
+repository root into a revision-specific pending snapshot, and validates the
 staged files before deployment. The path below that root is relative to `$HOME`;
 for example, `.config/opencode/` deploys to `~/.config/opencode/`.
 
@@ -92,7 +92,7 @@ dotfiles-sync store ~/.config/dotfiles-sync/after-apply
 ### Storing Local Changes
 
 Use `store` to copy one or more files, or a directory, from `$HOME` into the
-repository's configured root. Absolute paths are accepted directly; relative paths
+repository root. Absolute paths are accepted directly; relative paths
 are resolved from the current directory but must still resolve inside `$HOME`.
 
 ```sh
@@ -126,7 +126,7 @@ second command must provide that exact token. This two-stage flow is intended
 for agents and other non-interactive callers.
 
 `store` requires a clean repository checkout and commits only changes under
-the configured root. It does not push by itself; the next `dotfiles-sync sync` can push the
+the repository root. It does not push by itself; the next `dotfiles-sync sync` can push the
 commit after it has been reviewed.
 
 Set `APPLY_MODE=automatic` to apply validated updates during polling. The
@@ -166,15 +166,19 @@ The tracked configuration example is:
 .config/dotfiles-sync/config.example
 ```
 
-Configure `REMOTE`, `BRANCH`, `POLL_INTERVAL`, `APPLY_MODE`, `DOTFILES_ROOT`,
-and `IGNORE_FILE`. The dotfiles checkout is always `dotfiles/` below the
-deployed tool directory and the default managed root is `.`; do not
+Configure `REMOTE`, `BRANCH`, `POLL_INTERVAL`, `APPLY_MODE`, `IGNORE_FILE`,
+and `AFTER_APPLY_HOOK`. `IGNORE_FILE` and a non-empty `AFTER_APPLY_HOOK` must
+be absolute paths; the hook must be under `$HOME`. The dotfiles checkout is
+always `dotfiles/` below the deployed tool directory; do not
 put secrets or machine-specific files in it.
+
+For compatibility, the legacy relative conventional hook path is normalized in
+memory until migration `v0.1.3` can rewrite it as an absolute path.
 
 ### Ignored Paths
 
 `~/.config/dotfiles-sync/ignore` contains positive Gitignore-style patterns for
-paths under the configured root that must never be staged or applied by the updater. It supports comments,
+paths under the repository root that must never be staged or applied by the updater. It supports comments,
 blank lines, and shell-style `*` globs. Negation rules beginning with `!` are
 intentionally unsupported.
 
@@ -186,9 +190,10 @@ the updater never receives them from a remote checkout. The updater reads
 ## Releases
 
 Pushing a version tag such as `v1.0.0` creates a GitHub Release with a
-`dotfiles-sync.tgz` asset. The archive contains only tracked source files at
-that tag and can be downloaded and extracted on a new machine before running
-`bin/dotfiles-sync install --remote ...`.
+`dotfiles-sync.tgz` asset. The archive contains an explicit allowlist of the
+CLI, release metadata, configuration examples, migration scripts, scheduler
+templates, and README at that tag. It can be downloaded and extracted on a new
+machine before running `bin/dotfiles-sync install --remote ...`.
 
 Every release keeps its own `dotfiles-sync.tgz` asset. GitHub's latest-release
 marker changes only when the tag is greater than the current latest version
@@ -196,6 +201,23 @@ using numeric major, minor, and patch ordering.
 
 Each release description is a changelog generated from Conventional Commit
 subjects between the preceding tag and the release tag.
+
+### Breaking Updates
+
+When an updater release requires a breaking runtime configuration or state
+change, add a POSIX migration script at
+`.config/dotfiles-sync/migrations/vMAJOR.MINOR.PATCH.sh`. The script may modify
+only dotfiles-sync runtime configuration and state, must be idempotent, and must
+pass `sh -n`. It receives absolute `DOTFILES_SYNC_CONFIG_FILE`,
+`DOTFILES_SYNC_CONFIG_DIR`, and `DOTFILES_SYNC_STATE_DIR` environment variables.
+
+`self-update` validates and runs unrecorded migrations from each downloaded
+release before deploying that release. It backs up the runtime configuration and
+aborts the update if a migration fails. Authenticated GitHub CLI updates move
+through intermediate releases when the latest release is more than two major
+versions ahead. The workflow retains the two newest migration scripts and opens
+cleanup pull requests for older ones on `main` and the matching `release/*`
+branch.
 
 The first `v1` tag creates a `release/v1` maintenance branch. The first `v1.2`
 or `v1.2.3` tag similarly creates a `release/v1.2` branch. Later tags leave an
@@ -218,6 +240,9 @@ repository (`gh auth login`) or supply `GH_TOKEN` at update time. `self-update`
 uses those credentials through `gh release download`; no token is stored in the
 tool configuration. Public releases use the HTTPS downloader without GitHub CLI
 authentication.
+
+When `install` reuses an existing runtime configuration, it prints a warning and
+does not replace that configuration.
 
 ## Commit Messages
 

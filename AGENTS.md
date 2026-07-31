@@ -38,11 +38,16 @@ deploy across multiple machines.
   be rejected.
 - CLI self-updates must download a validated HTTPS release archive and replace
   only the deployed CLI directory; they must not modify a source checkout.
+- Add a versioned POSIX migration under `.config/dotfiles-sync/migrations/` for
+  breaking updater runtime-config or state changes. Migrations must be
+  idempotent, limited to updater config/state, and validated with `sh -n`.
+- Keep the two newest migration scripts; let the release workflow create cleanup
+  pull requests for older scripts. Do not delete migrations manually.
 - `sync` may pull fast-forward changes and push local commits; `check` must not
   pull, apply, or push.
 - Every apply must retain a rollback-capable backup.
-- Only tracked files under the configured `DOTFILES_ROOT` (default `.`) may
-  be copied to the user's home directory.
+- Only tracked files at the managed repository root may be copied to the
+  user's home directory.
 - Run an after-apply hook only when it is tracked, non-ignored, validated, and
   deployed with the applied revision.
 - Updater configuration belongs under `.config/dotfiles-sync/` in the

@@ -10,8 +10,7 @@ Apply this skill to all dotfiles and updater work.
 ## Repository Boundaries
 
 - Treat the Git checkout as source material, not as the live home directory.
-- Use tracked files under `DOTFILES_ROOT` (default `.`) as the deployment
-  boundary.
+- Use tracked files at the managed repository root as the deployment boundary.
 - Apply positive glob patterns from the configured runtime ignore file before
   staging or applying; keep those paths in `.gitignore` too.
 - Treat `store` as an explicit, interactive import from `$HOME`; validate path
@@ -46,6 +45,10 @@ with the applied revision.
 
 CLI self-updates must download a validated HTTPS release archive and atomically
 replace only the deployed CLI directory. They must not modify a source checkout.
+
+For breaking updater runtime-config or state changes, add an idempotent POSIX
+migration under `.config/dotfiles-sync/migrations/vMAJOR.MINOR.PATCH.sh`. It may
+modify only updater config/state and must pass `sh -n`.
 
 ## Shell Portability
 

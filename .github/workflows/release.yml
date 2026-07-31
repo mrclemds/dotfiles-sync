@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   release:
@@ -121,8 +122,19 @@ jobs:
       - name: Build release archive
         run: |
           set -eu
-          mkdir -p dist
-          git archive --format=tar --prefix="dotfiles-sync/" "$GITHUB_SHA" | gzip -n > dist/dotfiles-sync.tgz
+          rm -rf dist/package
+          mkdir -p dist/package
+          git archive --format=tar --prefix="dotfiles-sync/" "$GITHUB_SHA" -- \
+            .release-url \
+            README.md \
+            bin/dotfiles-sync \
+            .config/dotfiles-sync/config.example \
+            .config/dotfiles-sync/ignore.example \
+            .config/dotfiles-sync/migrations \
+            systemd/dotfiles-sync.service \
+            systemd/dotfiles-sync.timer | tar -xf - -C dist/package
+          printf '%s\n' "$TAG" > dist/package/dotfiles-sync/.release-version
+          tar -C dist/package -czf dist/dotfiles-sync.tgz dotfiles-sync
           tar -tzf dist/dotfiles-sync.tgz >/dev/null
 
       - name: Create release changelog
@@ -152,3 +164,43 @@ jobs:
           else
             gh release create "$TAG" "dist/dotfiles-sync.tgz" --title "$TAG" --notes-file dist/release-notes.md --latest=false
           fi
+
+  cleanup-migrations:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create migration cleanup pull requests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          version=${TAG#v}
+          case "$version" in
+            *.*) major=${version%%.*}; remainder=${version#*.}; branch="release/v${major}.${remainder%%.*}" ;;
+            *) branch="release/v${version}" ;;
+          esac
+          for target in main "$branch"; do
+            git fetch --quiet origin "$target"
+            cleanup_branch="automation/cleanup-migrations-${TAG#v}-${target#release/}"
+            git switch --create "$cleanup_branch" "origin/$target"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git ls-files '.config/dotfiles-sync/migrations/v*.sh' | sort -V > migrations
+            count=$(wc -l < migrations)
+            [ "$count" -gt 2 ] || continue
+            sed -n "1,$((count - 2))p" migrations > expired-migrations
+            while IFS= read -r migration; do
+              git rm -- "$migration"
+            done < expired-migrations
+            git commit -m "chore: retire old migrations"
+            git push origin "$cleanup_branch"
+            gh pr create --base "$target" --head "$cleanup_branch" \
+              --title "chore: retire old migrations" \
+              --body "Retains the two newest runtime migration scripts after $TAG."
+          done

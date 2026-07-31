@@ -3,7 +3,9 @@
 
 set -eu
 
-CONFIG_FILE=${DOTFILES_SYNC_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles-sync/config}
+CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles-sync
+CONFIG_FILE=${DOTFILES_SYNC_CONFIG:-$CONFIG_DIR/config}
+CONFIG_DIR=$(dirname "$CONFIG_FILE")
 STATE_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles-sync
 LOG_FILE=$STATE_DIR/sync.log
 PID_FILE=$STATE_DIR/daemon.pid
@@ -27,7 +29,7 @@ show_help() {
 Usage: dotfiles-sync <command> [options]
 
 Safely synchronize the configured Git-backed dotfiles checkout. Managed files
-are stored under its configured root and applied to matching paths under $HOME.
+are stored at its repository root and applied to matching paths under $HOME.
 
 Commands:
   install [OPTIONS]       Install or repair the CLI and user scheduler.
@@ -38,7 +40,7 @@ Commands:
   apply                   Apply the staged revision to $HOME with a backup.
   status                  Show the configured repository and revision state.
   rollback [BACKUP]       Restore the latest backup, or BACKUP if specified.
-  store [OPTIONS] PATH... Copy files from $HOME into the configured root and commit.
+  store [OPTIONS] PATH... Copy files from $HOME into the repository root and commit.
   daemon                  Poll continuously in the foreground.
   help                    Show this help.
 
@@ -72,6 +74,10 @@ EOF
 }
 
 load_config() {
+    require_absolute_path CONFIG_FILE "$CONFIG_FILE"
+    require_absolute_path CONFIG_DIR "$CONFIG_DIR"
+    require_absolute_path STATE_DIR "$STATE_DIR"
+    require_absolute_path INSTALL_DIR "$INSTALL_DIR"
     [ -r "$CONFIG_FILE" ] || die "missing config: $CONFIG_FILE (run: dotfiles-sync install)"
     # The config is shell syntax, but only values from the user's own file are sourced.
     # shellcheck disable=SC1090
@@ -82,13 +88,39 @@ load_config() {
     fi
     : "${POLL_INTERVAL:=21600}"
     : "${APPLY_MODE:=manual}"
-    : "${DOTFILES_ROOT:=.}"
-    : "${IGNORE_FILE:=${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles-sync/ignore}"
-    if [ "${AFTER_APPLY_HOOK+x}" != x ]; then
-        AFTER_APPLY_HOOK=.config/dotfiles-sync/after-apply
+    if [ "${DOTFILES_ROOT+x}" = x ]; then
+        die "DOTFILES_ROOT is no longer supported; the managed repository root is fixed"
     fi
+    : "${IGNORE_FILE:=$CONFIG_DIR/ignore}"
+    require_absolute_path IGNORE_FILE "$IGNORE_FILE"
+    if [ "${AFTER_APPLY_HOOK+x}" != x ]; then
+        AFTER_APPLY_HOOK=$CONFIG_DIR/after-apply
+    fi
+    configure_after_apply_hook
     TOOL_DIR=$(tool_dir) || die "could not determine tool directory"
     REPO_DIR=$TOOL_DIR/dotfiles
+}
+
+require_absolute_path() {
+    name=$1
+    path=$2
+    case "$path" in
+        /*) ;;
+        *) die "$name must be an absolute path: $path" ;;
+    esac
+}
+
+configure_after_apply_hook() {
+    case "$AFTER_APPLY_HOOK" in
+        '') AFTER_APPLY_HOOK_RELATIVE= ;;
+        "$HOME"/*) AFTER_APPLY_HOOK_RELATIVE=${AFTER_APPLY_HOOK#"$HOME"/} ;;
+        /*) die "AFTER_APPLY_HOOK must be under HOME: $AFTER_APPLY_HOOK" ;;
+        *)
+            # Releases before v0.1.3 used a HOME-relative hook path.
+            AFTER_APPLY_HOOK_RELATIVE=$AFTER_APPLY_HOOK
+            AFTER_APPLY_HOOK=$HOME/$AFTER_APPLY_HOOK
+            ;;
+    esac
 }
 
 ensure_dotfiles_checkout() {
@@ -97,12 +129,11 @@ ensure_dotfiles_checkout() {
         git clone --quiet --branch "$BRANCH" "$REMOTE" "$REPO_DIR"
         log "cloned dotfiles repository into $REPO_DIR"
     fi
-    [ -d "$REPO_DIR/$DOTFILES_ROOT" ] || die "managed files directory is missing: $REPO_DIR/$DOTFILES_ROOT"
+    [ -d "$REPO_DIR" ] || die "managed files directory is missing: $REPO_DIR"
 }
 
 configured_paths() {
-    git -C "$REPO_DIR" ls-files -- "$DOTFILES_ROOT" | while IFS= read -r source_path; do
-        path=${source_path#"$DOTFILES_ROOT/"}
+    git -C "$REPO_DIR" ls-files | while IFS= read -r path; do
         if ! ignored_path "$path"; then
             printf '%s\n' "$path"
         fi
@@ -137,7 +168,7 @@ stage_files() {
     rm -rf "$stage"
     mkdir -p "$stage"
     configured_paths | while IFS= read -r path; do
-        source=$REPO_DIR/$DOTFILES_ROOT/$path
+        source=$REPO_DIR/$path
         [ -e "$source" ] || die "configured file does not exist: $source"
         mkdir -p "$stage/$(dirname "$path")"
         cp -p "$source" "$stage/$path"
@@ -170,30 +201,26 @@ validate_stage() {
 
 validate_after_apply_hook() {
     stage=$1
-    case "$AFTER_APPLY_HOOK" in
-        '') return 0 ;;
-        /*|../*|*/../*|*/..) die "AFTER_APPLY_HOOK must be a path relative to HOME" ;;
-    esac
-    hook=$stage/$AFTER_APPLY_HOOK
+    [ -n "$AFTER_APPLY_HOOK_RELATIVE" ] || return 0
+    hook=$stage/$AFTER_APPLY_HOOK_RELATIVE
     [ ! -e "$hook" ] && return 0
-    [ -f "$hook" ] || die "after-apply hook is not a regular file: $AFTER_APPLY_HOOK"
-    sh -n "$hook" || die "after-apply hook validation failed: $AFTER_APPLY_HOOK"
+    [ -f "$hook" ] || die "after-apply hook is not a regular file: $AFTER_APPLY_HOOK_RELATIVE"
+    sh -n "$hook" || die "after-apply hook validation failed: $AFTER_APPLY_HOOK_RELATIVE"
 }
 
 after_apply_hook_is_tracked() {
-    git -C "$REPO_DIR" ls-files --error-unmatch -- "$DOTFILES_ROOT/$AFTER_APPLY_HOOK" >/dev/null 2>&1 \
-        && ! ignored_path "$AFTER_APPLY_HOOK"
+    [ -n "$AFTER_APPLY_HOOK_RELATIVE" ] \
+        && git -C "$REPO_DIR" ls-files --error-unmatch -- "$AFTER_APPLY_HOOK_RELATIVE" >/dev/null 2>&1 \
+        && ! ignored_path "$AFTER_APPLY_HOOK_RELATIVE"
 }
 
 run_after_apply_hook() {
-    case "$AFTER_APPLY_HOOK" in
-        '') return 0 ;;
-    esac
+    [ -n "$AFTER_APPLY_HOOK_RELATIVE" ] || return 0
     after_apply_hook_is_tracked || return 0
-    hook=$HOME/$AFTER_APPLY_HOOK
+    hook=$AFTER_APPLY_HOOK
     [ ! -e "$hook" ] && return 0
-    [ -f "$hook" ] || die "after-apply hook is not a regular file: $AFTER_APPLY_HOOK"
-    log "running after-apply hook: $AFTER_APPLY_HOOK"
+    [ -f "$hook" ] || die "after-apply hook is not a regular file: $AFTER_APPLY_HOOK_RELATIVE"
+    log "running after-apply hook: $AFTER_APPLY_HOOK_RELATIVE"
     DOTFILES_SYNC_REPO_DIR=$REPO_DIR DOTFILES_SYNC_REVISION=$commit sh "$hook"
     log "completed after-apply hook: $AFTER_APPLY_HOOK"
 }
@@ -282,7 +309,7 @@ store_path() {
         log "skipped ignored path: $relative"
         return 0
     fi
-    target=$REPO_DIR/$DOTFILES_ROOT/$relative
+    target=$REPO_DIR/$relative
     printf '%s\t%s\n' "$relative" "$source" >> "$STORE_PLAN"
     if [ -e "$target" ] && ! cmp -s "$source" "$target"; then
         printf '%s\n' "$relative" >> "$STORE_OVERWRITES"
@@ -373,7 +400,7 @@ store() {
             [ "$confirm_token" = "$overwrite_token" ] || die "overwrite requires --confirm-overwrite $overwrite_token (run --dry-run first)"
         else
             while IFS= read -r relative; do
-                target=$REPO_DIR/$DOTFILES_ROOT/$relative
+                target=$REPO_DIR/$relative
                 printf 'Overwrite %s? [y/N] ' "$target" > /dev/tty
                 read -r answer < /dev/tty || die "cannot read overwrite confirmation"
                 case "$answer" in
@@ -405,12 +432,14 @@ store() {
     while IFS= read -r plan_line; do
         relative=$(printf '%s\n' "$plan_line" | cut -f 1)
         source=$(printf '%s\n' "$plan_line" | cut -f 2-)
-        target=$REPO_DIR/$DOTFILES_ROOT/$relative
+        target=$REPO_DIR/$relative
         mkdir -p "$(dirname "$target")"
         cp -p "$source" "$target"
         printf '%s\n' "$relative" >> "$STORE_FILES"
     done < "$STORE_PLAN"
-    git -C "$REPO_DIR" add -- "$DOTFILES_ROOT"
+    while IFS= read -r relative; do
+        git -C "$REPO_DIR" add -- "$relative"
+    done < "$STORE_FILES"
     git -C "$REPO_DIR" commit -m "$message"
     log "stored and committed files; push the repository separately to synchronize other machines"
 }
@@ -418,7 +447,7 @@ store() {
 check_once() {
     load_config
     [ -d "$REPO_DIR/.git" ] || die "REPO_DIR is not a git checkout: $REPO_DIR"
-    [ -d "$REPO_DIR/$DOTFILES_ROOT" ] || die "managed files directory is missing: $REPO_DIR/$DOTFILES_ROOT"
+    [ -d "$REPO_DIR" ] || die "managed files directory is missing: $REPO_DIR"
     cd "$REPO_DIR"
     [ -z "$(git status --porcelain)" ] || die "local changes found in $REPO_DIR; refusing to overwrite them"
     git fetch --quiet origin "$BRANCH"
@@ -529,17 +558,82 @@ self_update() {
     esac
     update_dir=$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-sync-update.XXXXXX") || die "could not create update directory"
     trap 'rm -rf "$update_dir"' 0 1 2 3 15
-    archive=$update_dir/$release_asset
     if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-        gh release download --repo "$release_repo" --pattern "$release_asset" --dir "$update_dir" || die "could not download release"
+        latest_tag=$(gh release view --repo "$release_repo" --json tagName --jq .tagName) || die "could not determine the latest release"
+        release_version_is_valid "$latest_tag" || die "latest release has an invalid version: $latest_tag"
+        gh api --paginate "repos/$release_repo/releases?per_page=100" --jq '.[].tag_name' > "$update_dir/releases" \
+            || die "could not list releases"
+        installed_version=$(installed_release_version)
+        package_version=$installed_version
+        while version_is_greater "$latest_tag" "$installed_version"; do
+            next_tag=$(select_next_release "$installed_version" "$latest_tag" "$update_dir/releases")
+            step_dir=$update_dir/$next_tag
+            mkdir -p "$step_dir"
+            archive=$step_dir/$release_asset
+            download_release_archive "$next_tag" "$archive"
+            release_dir=$(extract_release_archive "$archive" "$step_dir")
+            package_version=$(release_directory_version "$release_dir" "$next_tag")
+            [ "$package_version" = "$next_tag" ] || die "release version does not match archive: expected $next_tag, got $package_version"
+            run_migrations "$release_dir" "$step_dir"
+            deploy_tool_source "$release_dir"
+            installed_version=$package_version
+        done
+    else
+        archive=$update_dir/$release_asset
+        download_release_archive latest "$archive"
+        release_dir=$(extract_release_archive "$archive" "$update_dir")
+        package_version=$(release_directory_version "$release_dir")
+        installed_version=$(installed_release_version)
+        if version_major_distance_exceeds_two "$package_version" "$installed_version"; then
+            die "self-update across more than two major versions requires an authenticated gh CLI"
+        fi
+        if version_is_greater "$package_version" "$installed_version"; then
+            run_migrations "$release_dir" "$update_dir"
+            deploy_tool_source "$release_dir"
+        fi
+    fi
+    install_command
+    trap - 0 1 2 3 15
+    rm -rf "$update_dir"
+    log "updated CLI to $package_version"
+}
+
+download_release_archive() {
+    tag=$1
+    archive=$2
+    archive_dir=$(dirname "$archive")
+    if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+        if [ "$tag" = latest ]; then
+            gh release download --repo "$release_repo" --pattern "$release_asset" --dir "$archive_dir" \
+                || die "could not download release"
+        else
+            gh release download "$tag" --repo "$release_repo" --pattern "$release_asset" --dir "$archive_dir" \
+                || die "could not download release"
+        fi
     elif command -v curl >/dev/null 2>&1; then
-        curl --fail --location --proto '=https' --tlsv1.2 --output "$archive" "$release_url" || die "could not download release"
+        if [ "$tag" = latest ]; then
+            url=$release_url
+        else
+            url=https://github.com/$release_repo/releases/download/$tag/$release_asset
+        fi
+        curl --fail --location --proto '=https' --tlsv1.2 --output "$archive" "$url" || die "could not download release"
     elif command -v wget >/dev/null 2>&1; then
-        wget -O "$archive" "$release_url" || die "could not download release"
+        if [ "$tag" = latest ]; then
+            url=$release_url
+        else
+            url=https://github.com/$release_repo/releases/download/$tag/$release_asset
+        fi
+        wget -O "$archive" "$url" || die "could not download release"
     else
         die "self-update requires an authenticated gh CLI, curl, or wget"
     fi
-    tar -tzf "$archive" > "$update_dir/files" || die "invalid release archive"
+    [ -r "$archive" ] || die "release download did not provide $release_asset"
+}
+
+extract_release_archive() {
+    archive=$1
+    destination=$2
+    tar -tzf "$archive" > "$destination/files" || die "invalid release archive"
     safe_archive=yes
     while IFS= read -r entry; do
         case "$entry" in
@@ -550,15 +644,138 @@ self_update() {
                 ;;
             *) safe_archive=no; break ;;
         esac
-    done < "$update_dir/files"
+    done < "$destination/files"
     [ "$safe_archive" = yes ] || die "release archive contains unsafe paths"
-    mkdir -p "$update_dir/extracted"
-    tar -xzf "$archive" -C "$update_dir/extracted" || die "could not extract release archive"
-    deploy_tool_source "$update_dir/extracted/dotfiles-sync"
-    install_command
-    trap - 0 1 2 3 15
-    rm -rf "$update_dir"
-    log "updated CLI from $release_url"
+    mkdir -p "$destination/extracted"
+    tar -xzf "$archive" -C "$destination/extracted" || die "could not extract release archive"
+    [ -d "$destination/extracted/dotfiles-sync" ] || die "release archive is missing dotfiles-sync"
+    printf '%s\n' "$destination/extracted/dotfiles-sync"
+}
+
+release_directory_version() {
+    release_dir=$1
+    fallback_version=${2:-v0.0.0}
+    if [ -r "$release_dir/.release-version" ]; then
+        version=$(cat "$release_dir/.release-version")
+        release_version_is_valid "$version" || die "release has an invalid version: $version"
+        printf '%s\n' "$version"
+    else
+        printf '%s\n' "$fallback_version"
+    fi
+}
+
+installed_release_version() {
+    release_directory_version "$INSTALL_DIR"
+}
+
+release_version_is_valid() {
+    version=${1#v}
+    case "$1" in
+        v*) ;;
+        *) return 1 ;;
+    esac
+    case "$version" in
+        ''|.*|*..*|*.|*.*.*.*|*[!0-9.]*) return 1 ;;
+    esac
+}
+
+version_parts() {
+    version=${1#v}
+    major=${version%%.*}
+    remainder=${version#*.}
+    if [ "$remainder" = "$version" ]; then
+        printf '%s 0 0\n' "$major"
+        return
+    fi
+    minor=${remainder%%.*}
+    patch=${remainder#*.}
+    if [ "$patch" = "$remainder" ]; then
+        patch=0
+    fi
+    printf '%s %s %s\n' "$major" "$minor" "$patch"
+}
+
+version_is_greater() {
+    candidate=$1
+    current=$2
+    set -- $(version_parts "$candidate")
+    candidate_major=$1 candidate_minor=$2 candidate_patch=$3
+    set -- $(version_parts "$current")
+    current_major=$1 current_minor=$2 current_patch=$3
+    [ "$candidate_major" -gt "$current_major" ] && return 0
+    [ "$candidate_major" -lt "$current_major" ] && return 1
+    [ "$candidate_minor" -gt "$current_minor" ] && return 0
+    [ "$candidate_minor" -lt "$current_minor" ] && return 1
+    [ "$candidate_patch" -gt "$current_patch" ]
+}
+
+version_major_distance_exceeds_two() {
+    set -- $(version_parts "$1")
+    target_major=$1
+    set -- $(version_parts "$2")
+    installed_major=$1
+    [ $((target_major - installed_major)) -gt 2 ]
+}
+
+select_next_release() {
+    installed_version=$1
+    latest_version=$2
+    releases_file=$3
+    set -- $(version_parts "$installed_version")
+    maximum_major=$(( $1 + 2 ))
+    next_version=
+    while IFS= read -r candidate; do
+        release_version_is_valid "$candidate" || continue
+        set -- $(version_parts "$candidate")
+        [ "$1" -le "$maximum_major" ] || continue
+        version_is_greater "$candidate" "$installed_version" || continue
+        if [ -z "$next_version" ] || version_is_greater "$candidate" "$next_version"; then
+            next_version=$candidate
+        fi
+    done < "$releases_file"
+    [ -n "$next_version" ] || die "no supported intermediate release is available between $installed_version and $latest_version"
+    printf '%s\n' "$next_version"
+}
+
+run_migrations() {
+    release_dir=$1
+    work_dir=$2
+    migration_dir=$release_dir/.config/dotfiles-sync/migrations
+    migration_order=$work_dir/migration-order
+    [ -d "$migration_dir" ] || return 0
+    : > "$migration_order"
+    for migration in "$migration_dir"/*.sh; do
+        [ -f "$migration" ] || continue
+        name=$(basename "$migration")
+        case "$name" in
+            v[0-9]*.[0-9]*.[0-9]*.sh) ;;
+            *) die "migration names must use vMAJOR.MINOR.PATCH.sh: $name" ;;
+        esac
+        marker=$STATE_DIR/migrations/$name.done
+        [ ! -e "$marker" ] || continue
+        version=${name#v}
+        version=${version%.sh}
+        key=$(printf '%s\n' "$version" | awk -F. '{ printf "%09d.%09d.%09d", $1, $2, $3 }')
+        printf '%s\t%s\n' "$key" "$migration" >> "$migration_order"
+    done
+    [ -s "$migration_order" ] || return 0
+    timestamp=$(date '+%Y%m%d%H%M%S')
+    backup=$STATE_DIR/migration-backups/$timestamp
+    mkdir -p "$backup" "$STATE_DIR/migrations"
+    if [ -d "$CONFIG_DIR" ]; then
+        cp -Rp "$CONFIG_DIR" "$backup/config"
+    fi
+    tab=$(printf '\t')
+    sort "$migration_order" | while IFS="$tab" read -r _ migration; do
+        name=$(basename "$migration")
+        sh -n "$migration" || die "migration shell validation failed: $name"
+        DOTFILES_SYNC_CONFIG_FILE=$CONFIG_FILE \
+            DOTFILES_SYNC_CONFIG_DIR=$CONFIG_DIR \
+            DOTFILES_SYNC_STATE_DIR=$STATE_DIR \
+            sh "$migration" || die "migration failed: $name (config backup: $backup)"
+        : > "$STATE_DIR/migrations/$name.done"
+        log "applied migration $name"
+    done
 }
 
 remote_default_branch() {
@@ -571,6 +788,10 @@ remote_default_branch() {
 }
 
 install_sync() {
+    require_absolute_path CONFIG_FILE "$CONFIG_FILE"
+    require_absolute_path CONFIG_DIR "$CONFIG_DIR"
+    require_absolute_path STATE_DIR "$STATE_DIR"
+    require_absolute_path INSTALL_DIR "$INSTALL_DIR"
     remote=
     branch=
     while [ "$#" -gt 0 ]; do
@@ -599,6 +820,8 @@ install_sync() {
         fi
     elif [ -n "$remote" ] || [ -n "$branch" ]; then
         die "runtime config already exists; edit REMOTE or BRANCH in $CONFIG_FILE"
+    else
+        log "WARNING: using existing configuration: $CONFIG_FILE"
     fi
     config_dir=$(dirname "$CONFIG_FILE")
     mkdir -p "$config_dir" "$STATE_DIR" "$HOME/.local/bin"
@@ -614,10 +837,9 @@ REMOTE=$remote
 BRANCH=$branch
 POLL_INTERVAL=21600
 APPLY_MODE=manual
-DOTFILES_ROOT=.
 IGNORE_FILE=$config_dir/ignore
-# Relative to HOME. Set empty to disable the default after-apply hook.
-AFTER_APPLY_HOOK=.config/dotfiles-sync/after-apply
+# Absolute path under HOME. Set empty to disable the default after-apply hook.
+AFTER_APPLY_HOOK=$config_dir/after-apply
 EOF
         log "created $CONFIG_FILE"
     fi

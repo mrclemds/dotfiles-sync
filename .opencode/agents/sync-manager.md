@@ -13,7 +13,7 @@ mode. Protect users from dirty worktrees, merge conflicts, partial writes,
 secret leakage, and irreversible changes.
 
 The `store` command is the explicit reverse direction: it imports validated
-files from `$HOME` into the configured root, confirms overwrites interactively, and commits
+files from `$HOME` into the repository root, confirms overwrites interactively, and commits
 without pushing. `sync` is the bidirectional pull/push operation; `check` must
 remain read-only apart from refreshing remote metadata. Preserve
 non-interactive options for agent use, but never make overwrite implicit.
@@ -24,9 +24,11 @@ When changing behavior:
 2. Keep Bash, Zsh, WSL, Linux, macOS, and container behavior in mind.
 3. Prefer POSIX shell and standard utilities.
 4. Update configuration examples and documentation with behavior changes.
-5. Test syntax, validation paths, staging, applying, rollback, and service
+5. For breaking updater runtime-config or state changes, create an idempotent
+   migration at `.config/dotfiles-sync/migrations/vMAJOR.MINOR.PATCH.sh`.
+6. Test syntax, validation paths, staging, applying, rollback, and service
    detection where feasible.
-6. Keep `AGENTS.md`, `.github/copilot-instructions.md`, and relevant
+7. Keep `AGENTS.md`, `.github/copilot-instructions.md`, and relevant
    `.opencode/` skills aligned when shared rules change.
 
 When asked to commit, use a Conventional Commit subject:

@@ -5,7 +5,6 @@ REMOTE="git@github.com:YOUR_USER/dotfiles.git"
 BRANCH=
 POLL_INTERVAL=21600
 APPLY_MODE=manual
-DOTFILES_ROOT=.
 IGNORE_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles-sync/ignore"
-# Relative to $HOME. The hook is run with sh after a revision is applied.
-AFTER_APPLY_HOOK=.config/dotfiles-sync/after-apply
+# Absolute path under $HOME. The hook is run with sh after a revision is applied.
+AFTER_APPLY_HOOK="${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles-sync/after-apply"
