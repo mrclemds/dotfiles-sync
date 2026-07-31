@@ -21,7 +21,7 @@ GitHub Codespaces.
 - Accept only fast-forward updates and reject dirty checkouts.
 - Validate staged files before applying them.
 - Keep a rollback-capable backup for every apply.
-- Copy only tracked files under `DOTFILES_ROOT` (default `home/`).
+- Copy only tracked files under `DOTFILES_ROOT` (default `.`).
 - Run an after-apply hook only when it is tracked, non-ignored, validated, and
   deployed with the applied revision.
 - Exclude positive glob patterns from the configured runtime ignore file before

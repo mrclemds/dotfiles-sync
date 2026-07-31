@@ -7,7 +7,7 @@ directory.
 ## Repository Layout
 
 ```text
-home/                            Empty placeholder for a managed dotfiles tree
+dotfiles/                        Local checkout of the managed dotfiles repository
 .config/dotfiles-sync/           Updater configuration example
 .config/dotfiles-sync/ignore.example
                                   Runtime deployment ignore-pattern example
@@ -20,8 +20,8 @@ launchd/                         macOS launch agent template
 ```
 
 Updater configuration belongs under `.config/dotfiles-sync/` in the repository
-and under `~/.config/dotfiles-sync/` at runtime. Add managed dotfiles below
-`home/` only in a repository intended to distribute those files.
+and under `~/.config/dotfiles-sync/` at runtime. The configured remote is
+cloned into `dotfiles/`; its configured root contains the managed files.
 
 ## Updater
 
@@ -30,7 +30,7 @@ and under `~/.config/dotfiles-sync/` at runtime. Add managed dotfiles below
 ```text
 install    Install or repair the command and register a user scheduler
 self-update Fast-forward the CLI repository, then reinstall the command
-store      Copy local HOME files into home/, then create a Git commit
+store      Copy local HOME files into the configured root, then create a Git commit
 sync       Pull, stage/apply, and push updates in both directions
 check      Fetch remote metadata and report status without pull/apply/push
 apply      Apply the staged update to $HOME
@@ -43,7 +43,7 @@ help       Show command usage
 The default workflow is safe and manual:
 
 ```sh
-bin/dotfiles-sync install
+bin/dotfiles-sync install --remote git@github.com:YOUR_USER/dotfiles.git
 dotfiles-sync sync
 dotfiles-sync status
 dotfiles-sync apply
@@ -58,10 +58,10 @@ and does not stage, apply, or push managed dotfiles.
 `sync` never changes `$HOME` in the default `APPLY_MODE=manual` mode. It pulls
 remote fast-forward changes, stages them, and pushes local commits created by
 `store`. It rejects
-dirty checkouts and non-fast-forward updates, copies tracked files under
-`home/` into a revision-specific pending snapshot, and validates the staged
-files before deployment. The path below `home/` is the path relative to `$HOME`;
-for example, `home/.config/opencode/` deploys to `~/.config/opencode/`.
+dirty checkouts and non-fast-forward updates, copies tracked files under the
+configured root into a revision-specific pending snapshot, and validates the
+staged files before deployment. The path below that root is relative to `$HOME`;
+for example, `.config/opencode/` deploys to `~/.config/opencode/`.
 
 `apply` validates again, creates a rollback-capable backup, writes temporary
 files, and then renames them into place. State and logs are stored under:
@@ -72,7 +72,7 @@ files, and then renames them into place. State and logs are stored under:
 
 ### After-Apply Hook
 
-When a tracked `home/.config/dotfiles-sync/after-apply` file is present, `apply`
+When a tracked `.config/dotfiles-sync/after-apply` file is present, `apply`
 validates it with `sh -n`, deploys it with the revision, records the revision as
 applied, and then runs the deployed version with `sh`. This permits a newer
 configuration script to run only after it has been applied. The hook receives
@@ -91,7 +91,7 @@ dotfiles-sync store ~/.config/dotfiles-sync/after-apply
 ### Storing Local Changes
 
 Use `store` to copy one or more files, or a directory, from `$HOME` into the
-repository's `home/` tree. Absolute paths are accepted directly; relative paths
+repository's configured root. Absolute paths are accepted directly; relative paths
 are resolved from the current directory but must still resolve inside `$HOME`.
 
 ```sh
@@ -126,7 +126,7 @@ second command must provide that exact token. This two-stage flow is intended
 for agents and other non-interactive callers.
 
 `store` requires a clean repository checkout and commits only changes under
-`home/`. It does not push by itself; the next `dotfiles-sync sync` can push the
+the configured root. It does not push by itself; the next `dotfiles-sync sync` can push the
 commit after it has been reviewed.
 
 Set `APPLY_MODE=automatic` to apply validated updates during polling. The
@@ -135,11 +135,16 @@ is reserved for integrations that want to notify a user after staging.
 
 ## Installation
 
-Run the installer from the repository checkout:
+Run the installer from the repository checkout. On first installation, provide
+the dotfiles repository URL. Add `--branch NAME` to use a branch other than the
+remote default:
 
 ```sh
-bin/dotfiles-sync install
+bin/dotfiles-sync install --remote git@github.com:YOUR_USER/dotfiles.git
 ```
+
+When run from a terminal, `install` prompts for the repository URL if `--remote`
+is omitted. Non-interactive installation requires `--remote`.
 
 It creates `~/.config/dotfiles-sync/config` when needed, installs
 `~/.local/bin/dotfiles-sync`, and registers the best available user scheduler.
@@ -153,14 +158,15 @@ The tracked configuration example is:
 .config/dotfiles-sync/config.example
 ```
 
-Configure `REPO_DIR`, `REMOTE`, `BRANCH`, `POLL_INTERVAL`, `APPLY_MODE`,
-`DOTFILES_ROOT`, and `IGNORE_FILE`. The default managed root is `home/`; do not
+Configure `REMOTE`, `BRANCH`, `POLL_INTERVAL`, `APPLY_MODE`, `DOTFILES_ROOT`,
+and `IGNORE_FILE`. The dotfiles checkout is always `dotfiles/` below the tool
+repository and the default managed root is `.`; do not
 put secrets or machine-specific files in it.
 
 ### Ignored Paths
 
 `~/.config/dotfiles-sync/ignore` contains positive Gitignore-style patterns for
-paths under `home/` that must never be staged or applied by the updater. It supports comments,
+paths under the configured root that must never be staged or applied by the updater. It supports comments,
 blank lines, and shell-style `*` globs. Negation rules beginning with `!` are
 intentionally unsupported.
 

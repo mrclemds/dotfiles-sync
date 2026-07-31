@@ -10,7 +10,7 @@ Apply this skill to all dotfiles and updater work.
 ## Repository Boundaries
 
 - Treat the Git checkout as source material, not as the live home directory.
-- Use tracked files under `DOTFILES_ROOT` (default `home/`) as the deployment
+- Use tracked files under `DOTFILES_ROOT` (default `.`) as the deployment
   boundary.
 - Apply positive glob patterns from the configured runtime ignore file before
   staging or applying; keep those paths in `.gitignore` too.

@@ -17,22 +17,26 @@ log() {
 
 die() { log "ERROR: $*" >&2; exit 1; }
 
+tool_dir() {
+    CDPATH= cd -- "$(dirname "$0")/.." && pwd
+}
+
 show_help() {
     cat <<'EOF'
 Usage: dotfiles-sync <command> [options]
 
-Safely synchronize a Git-backed dotfiles checkout. Managed files are stored
-under home/ in the repository and applied to matching paths under $HOME.
+Safely synchronize the configured Git-backed dotfiles checkout. Managed files
+are stored under its configured root and applied to matching paths under $HOME.
 
 Commands:
-  install                 Install or repair the CLI and user scheduler.
+  install [OPTIONS]       Install or repair the CLI and user scheduler.
   self-update             Fast-forward the CLI repository and reinstall the CLI.
   sync                    Fetch, fast-forward, stage managed files, and push.
   check                   Fetch metadata and report repository status only.
   apply                   Apply the staged revision to $HOME with a backup.
   status                  Show the configured repository and revision state.
   rollback [BACKUP]       Restore the latest backup, or BACKUP if specified.
-  store [OPTIONS] PATH... Copy files from $HOME into home/ and commit them.
+  store [OPTIONS] PATH... Copy files from $HOME into the configured root and commit.
   daemon                  Poll continuously in the foreground.
   help                    Show this help.
 
@@ -43,6 +47,10 @@ Store options:
   --confirm-overwrite ID  Confirm the ID returned by --dry-run.
   --non-interactive       Do not prompt for a commit message or overwrite.
   --list FILE             Read source paths from FILE.
+
+Install options (required only when no runtime config exists):
+  -r, --remote URL        Dotfiles repository URL; prompted interactively if omitted.
+  -b, --branch NAME       Dotfiles branch; defaults to the remote default branch.
 
 Safety:
   sync and self-update require a clean checkout and accept only fast-forward updates.
@@ -63,16 +71,26 @@ load_config() {
     # The config is shell syntax, but only values from the user's own file are sourced.
     # shellcheck disable=SC1090
     . "$CONFIG_FILE"
-    : "${REPO_DIR:?REPO_DIR is required in $CONFIG_FILE}"
     : "${REMOTE:?REMOTE is required in $CONFIG_FILE}"
-    : "${BRANCH:=main}"
+    : "${BRANCH:=master}"
     : "${POLL_INTERVAL:=21600}"
     : "${APPLY_MODE:=manual}"
-    : "${DOTFILES_ROOT:=home}"
+    : "${DOTFILES_ROOT:=.}"
     : "${IGNORE_FILE:=${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles-sync/ignore}"
     if [ "${AFTER_APPLY_HOOK+x}" != x ]; then
         AFTER_APPLY_HOOK=.config/dotfiles-sync/after-apply
     fi
+    TOOL_DIR=$(tool_dir) || die "could not determine tool directory"
+    REPO_DIR=$TOOL_DIR/dotfiles
+}
+
+ensure_dotfiles_checkout() {
+    if [ ! -d "$REPO_DIR/.git" ]; then
+        [ ! -e "$REPO_DIR" ] || die "dotfiles directory is not a git checkout: $REPO_DIR"
+        git clone --quiet --branch "$BRANCH" "$REMOTE" "$REPO_DIR"
+        log "cloned dotfiles repository into $REPO_DIR"
+    fi
+    [ -d "$REPO_DIR/$DOTFILES_ROOT" ] || die "managed files directory is missing: $REPO_DIR/$DOTFILES_ROOT"
 }
 
 configured_paths() {
@@ -258,6 +276,7 @@ store_path() {
 
 store() {
     load_config
+    ensure_dotfiles_checkout
     message=
     auto_message=no
     dry_run=no
@@ -410,8 +429,7 @@ check_once() {
 
 sync_once() {
     load_config
-    [ -d "$REPO_DIR/.git" ] || die "REPO_DIR is not a git checkout: $REPO_DIR"
-    [ -d "$REPO_DIR/$DOTFILES_ROOT" ] || die "managed files directory is missing: $REPO_DIR/$DOTFILES_ROOT"
+    ensure_dotfiles_checkout
     cd "$REPO_DIR"
     [ -z "$(git status --porcelain)" ] || die "local changes found in $REPO_DIR; refusing to synchronize"
     git fetch --quiet origin "$BRANCH"
@@ -444,46 +462,84 @@ sync_once() {
 }
 
 self_update() {
-    load_config
-    [ -d "$REPO_DIR/.git" ] || die "REPO_DIR is not a git checkout: $REPO_DIR"
-    [ -x "$REPO_DIR/bin/dotfiles-sync" ] || die "CLI source is missing: $REPO_DIR/bin/dotfiles-sync"
-    cd "$REPO_DIR"
-    [ -z "$(git status --porcelain)" ] || die "local changes found in $REPO_DIR; refusing to self-update"
-    git fetch --quiet origin "$BRANCH"
+    TOOL_DIR=$(tool_dir) || die "could not determine tool directory"
+    [ -d "$TOOL_DIR/.git" ] || die "tool directory is not a git checkout: $TOOL_DIR"
+    cd "$TOOL_DIR"
+    [ -z "$(git status --porcelain)" ] || die "local changes found in $TOOL_DIR; refusing to self-update"
+    branch=$(git symbolic-ref --quiet --short HEAD) || die "self-update requires a checked out branch"
+    git fetch --quiet origin "$branch"
     local_head=$(git rev-parse HEAD)
-    remote_head=$(git rev-parse "origin/$BRANCH")
+    remote_head=$(git rev-parse "origin/$branch")
     if [ "$local_head" = "$remote_head" ]; then
         log "CLI repository is up to date: $local_head"
-    elif git merge-base --is-ancestor HEAD "origin/$BRANCH"; then
-        git merge --ff-only --quiet "origin/$BRANCH"
+    elif git merge-base --is-ancestor HEAD "origin/$branch"; then
+        git merge --ff-only --quiet "origin/$branch"
         log "updated CLI repository to $(git rev-parse HEAD)"
-        exec "$REPO_DIR/bin/dotfiles-sync" install
-    elif git merge-base --is-ancestor "origin/$BRANCH" HEAD; then
-        die "local commits found in $REPO_DIR; push or resolve them before self-updating"
+        exec "$TOOL_DIR/bin/dotfiles-sync" install
+    elif git merge-base --is-ancestor "origin/$branch" HEAD; then
+        die "local commits found in $TOOL_DIR; push or resolve them before self-updating"
     else
-        die "local and remote histories diverged; resolve manually in $REPO_DIR"
+        die "local and remote histories diverged; resolve manually in $TOOL_DIR"
     fi
 }
 
+remote_default_branch() {
+    set -- $(git ls-remote --symref "$1" HEAD 2>/dev/null)
+    [ "${1:-}" = ref: ] && [ "${3:-}" = HEAD ] || return 1
+    case "$2" in
+        refs/heads/*) printf '%s\n' "${2#refs/heads/}" ;;
+        *) return 1 ;;
+    esac
+}
+
 install_sync() {
+    remote=
+    branch=
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            -r|--remote)
+                [ "$#" -ge 2 ] || die "$1 requires a repository URL"
+                remote=$2
+                shift 2
+                ;;
+            -b|--branch)
+                [ "$#" -ge 2 ] || die "$1 requires a branch name"
+                branch=$2
+                shift 2
+                ;;
+            *) die "unknown install option: $1" ;;
+        esac
+    done
+    if [ ! -r "$CONFIG_FILE" ]; then
+        if [ -z "$remote" ] && [ -t 0 ] && [ -t 1 ]; then
+            printf 'Dotfiles repository URL: ' > /dev/tty
+            read -r remote < /dev/tty || die "cannot read dotfiles repository URL"
+        fi
+        [ -n "$remote" ] || die "install requires --remote URL when $CONFIG_FILE does not exist"
+        if [ -z "$branch" ]; then
+            branch=$(remote_default_branch "$remote") || die "could not determine the default branch; rerun with --branch NAME"
+        fi
+    elif [ -n "$remote" ] || [ -n "$branch" ]; then
+        die "runtime config already exists; edit REMOTE or BRANCH in $CONFIG_FILE"
+    fi
     config_dir=$(dirname "$CONFIG_FILE")
     mkdir -p "$config_dir" "$STATE_DIR" "$HOME/.local/bin"
     script_dir=$(CDPATH=; cd -- "$(dirname "$0")" && pwd)
+    repo_dir=$(tool_dir) || die "could not determine tool directory"
     ignore_example=$script_dir/../.config/dotfiles-sync/ignore.example
-    cp "$script_dir/dotfiles-sync" "$HOME/.local/bin/dotfiles-sync"
+    cat >"$HOME/.local/bin/dotfiles-sync" <<EOF
+#!/bin/sh
+exec "$repo_dir/bin/dotfiles-sync" "\$@"
+EOF
     chmod 755 "$HOME/.local/bin/dotfiles-sync"
     if [ ! -r "$CONFIG_FILE" ]; then
-        repo_dir=$(CDPATH=; cd -- "$(dirname "$0")/.." && pwd)
-        remote=$(git -C "$repo_dir" config --get remote.origin.url || true)
-        [ -n "$remote" ] || die "could not determine git remote; set REMOTE in $CONFIG_FILE"
         cat >"$CONFIG_FILE" <<EOF
-# dotfiles-sync configuration. Paths are relative to REPO_DIR, one per line.
-REPO_DIR=$repo_dir
+# dotfiles-sync configuration for the managed dotfiles repository.
 REMOTE=$remote
-BRANCH=main
+BRANCH=$branch
 POLL_INTERVAL=21600
 APPLY_MODE=manual
-DOTFILES_ROOT=home
+DOTFILES_ROOT=.
 IGNORE_FILE=$config_dir/ignore
 # Relative to HOME. Set empty to disable the default after-apply hook.
 AFTER_APPLY_HOOK=.config/dotfiles-sync/after-apply
@@ -581,7 +637,7 @@ daemon() {
 
 case "${1:-sync}" in
     --help|-h|help) show_help ;;
-    install) install_sync ;;
+    install) shift; install_sync "$@" ;;
     self-update) self_update ;;
     sync) sync_once ;;
     check) check_once ;;

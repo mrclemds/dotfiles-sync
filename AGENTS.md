@@ -30,13 +30,13 @@ deploy across multiple machines.
 - `sync` pulls and stages; it must not modify files in `$HOME` in manual mode.
 - `apply` is the only normal operation that changes managed files in `$HOME`.
 - `store` is the explicit operation that copies files from `$HOME` into the
-  tracked `home/` tree and creates a commit; it must validate that sources are
+  configured dotfiles root and creates a commit; it must validate that sources are
   inside `$HOME`.
 - Updates must be fast-forward only and dirty checkouts must be rejected.
 - `sync` may pull fast-forward changes and push local commits; `check` must not
   pull, apply, or push.
 - Every apply must retain a rollback-capable backup.
-- Only tracked files under the configured `DOTFILES_ROOT` (default `home/`) may
+- Only tracked files under the configured `DOTFILES_ROOT` (default `.`) may
   be copied to the user's home directory.
 - Run an after-apply hook only when it is tracked, non-ignored, validated, and
   deployed with the applied revision.

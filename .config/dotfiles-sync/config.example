@@ -1,10 +1,11 @@
-# Copy to ~/.config/dotfiles-sync/config, or run bin/dotfiles-sync install.
-REPO_DIR="$HOME/.local/share/dotfiles"
+# Copy to ~/.config/dotfiles-sync/config, or run:
+# bin/dotfiles-sync install --remote URL [--branch NAME]
 REMOTE="git@github.com:YOUR_USER/dotfiles.git"
-BRANCH=main
+# Set this to a preferred branch. install detects the remote default when omitted.
+BRANCH=master
 POLL_INTERVAL=21600
 APPLY_MODE=manual
-DOTFILES_ROOT=home
+DOTFILES_ROOT=.
 IGNORE_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles-sync/ignore"
 # Relative to $HOME. The hook is run with sh after a revision is applied.
 AFTER_APPLY_HOOK=.config/dotfiles-sync/after-apply
