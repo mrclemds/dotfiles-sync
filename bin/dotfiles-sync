@@ -511,10 +511,10 @@ store() {
         git -C "$REPO_DIR" add -- "$relative"
     done < "$STORE_FILES"
     git -C "$REPO_DIR" commit -m "$message"
+    log "stored and committed files"
     if [ "$STORE_PUSH_MODE" = automatic ]; then
         push_once
     fi
-    log "stored and committed files"
 }
 
 remove_path() {
@@ -719,8 +719,10 @@ sync_once() {
             validate_stage "$PENDING_DIR/$commit"
             if [ "$SYNC_APPLY_MODE" = automatic ]; then
                 apply_pending
+                log "pulled and applied revision $commit"
+            else
+                log "pulled and staged revision $commit"
             fi
-            log "pulled and staged revision $commit"
         elif ! git merge-base --is-ancestor "origin/$BRANCH" HEAD; then
             die "local and remote histories diverged; resolve manually in $REPO_DIR"
         fi

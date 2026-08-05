@@ -182,14 +182,33 @@ printf 'two\n' > "$TEST_DIR/seed/managed.txt"
 git -C "$TEST_DIR/seed" add managed.txt
 git -C "$TEST_DIR/seed" commit -m "test: update managed file" >/dev/null
 git -C "$TEST_DIR/seed" push origin main >/dev/null
-"$HOME/.local/bin/dotfiles-sync" sync >/dev/null
+"$HOME/.local/bin/dotfiles-sync" sync > "$TEST_DIR/manual-sync.log"
+assert_contains "$TEST_DIR/manual-sync.log" 'pulled and staged revision'
 "$HOME/.local/bin/dotfiles-sync" apply >/dev/null
 assert_file "$HOME/managed.txt"
 assert_contains "$HOME/managed.txt" two
 
+sed -i 's/^SYNC_APPLY_MODE=manual$/SYNC_APPLY_MODE=automatic/' "$XDG_CONFIG_HOME/dotfiles-sync/config"
+printf 'three\n' > "$TEST_DIR/seed/managed.txt"
+git -C "$TEST_DIR/seed" add managed.txt
+git -C "$TEST_DIR/seed" commit -m "test: automatically apply managed file" >/dev/null
+git -C "$TEST_DIR/seed" push origin main >/dev/null
+"$HOME/.local/bin/dotfiles-sync" sync > "$TEST_DIR/automatic-sync.log"
+assert_contains "$TEST_DIR/automatic-sync.log" 'pulled and applied revision'
+if grep -q 'pulled and staged revision' "$TEST_DIR/automatic-sync.log"; then
+    fail "automatic sync reported an applied revision as staged"
+fi
+assert_contains "$HOME/managed.txt" three
+
 sed -i 's/^STORE_PUSH_MODE=manual$/STORE_PUSH_MODE=automatic/' "$XDG_CONFIG_HOME/dotfiles-sync/config"
 printf 'push automatically\n' > "$HOME/push.txt"
-"$HOME/.local/bin/dotfiles-sync" store --non-interactive --message "test: automatic push" "$HOME/push.txt" >/dev/null
+"$HOME/.local/bin/dotfiles-sync" store --non-interactive --message "test: automatic push" "$HOME/push.txt" \
+    > "$TEST_DIR/automatic-store.log"
+assert_contains "$TEST_DIR/automatic-store.log" 'stored and committed files'
+assert_contains "$TEST_DIR/automatic-store.log" 'pushed revision'
+stored_line=$(grep -n 'stored and committed files' "$TEST_DIR/automatic-store.log" | cut -d: -f1)
+pushed_line=$(grep -n 'pushed revision' "$TEST_DIR/automatic-store.log" | cut -d: -f1)
+[ "$stored_line" -lt "$pushed_line" ] || fail "automatic store push log order is incorrect"
 git --git-dir="$TEST_DIR/remote.git" show main:push.txt >/dev/null \
     || fail "automatic store push did not push local commit"
 
