@@ -34,7 +34,7 @@ dotfiles-sync apply
 ```
 
 `sync` fetches, fast-forwards, validates, and stages a revision. In the default
-`APPLY_MODE=manual`, it does **not** modify `$HOME`. Review `status`, then run
+`SYNC_APPLY_MODE=manual`, it does **not** modify `$HOME`. Review `status`, then run
 `apply` to deploy the staged revision. Every apply creates a rollback-capable
 backup before replacing files.
 
@@ -69,8 +69,9 @@ dotfiles-sync store ~/.config/opencode/
 ```
 
 `store` accepts only paths inside `$HOME`, requires a clean managed checkout,
-and creates a local Git commit. It does not push; `sync` pushes the reviewed
-commit later. Existing destination files require an interactive overwrite
+and creates a local Git commit. With the default `STORE_PUSH_MODE=manual`, `sync`
+pushes the reviewed commit later; set `STORE_PUSH_MODE=automatic` to push it
+immediately. Existing destination files require an interactive overwrite
 confirmation.
 
 For agents and other non-interactive callers, supply a message. If replacement
@@ -104,7 +105,8 @@ Important settings:
 | --- | --- | --- |
 | `REMOTE` | required | Git remote for the managed dotfiles repository. |
 | `BRANCH` | remote default | Managed branch. |
-| `APPLY_MODE` | `manual` | `manual`, `automatic`, or integration-reserved `prompt`. |
+| `SYNC_APPLY_MODE` | `manual` | Apply staged remote changes during `sync` when `automatic`. |
+| `STORE_PUSH_MODE` | `manual` | Push after `store` when `automatic`; `manual` and `prompt` defer to `sync`. |
 | `POLL_INTERVAL` | `21600` | Automatic polling interval in seconds. |
 | `IGNORE_FILE` | runtime ignore file | Positive patterns never staged or applied. |
 | `AFTER_APPLY_HOOK` | conventional path | Optional tracked post-apply POSIX hook. |
@@ -141,7 +143,9 @@ with an empty `AFTER_APPLY_HOOK` setting.
 - `store` and `remove` accept only paths inside `$HOME`.
 - Never track credentials, private keys, tokens, or machine-local state.
 
-Set `APPLY_MODE=automatic` only after reviewing and trusting the full workflow.
+Set `SYNC_APPLY_MODE=automatic` or `STORE_PUSH_MODE=automatic` only after reviewing and
+trusting the relevant workflow. With `STORE_PUSH_MODE=automatic`, a successful
+`store` immediately pushes its commit; otherwise the next `sync` pushes it.
 
 ## Releases
 

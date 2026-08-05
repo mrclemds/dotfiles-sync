@@ -4,7 +4,10 @@ REMOTE="git@github.com:YOUR_USER/dotfiles.git"
 # Set this to a preferred branch. install detects the remote default when omitted.
 BRANCH=
 POLL_INTERVAL=21600
-APPLY_MODE=manual
+# Apply staged remote changes during sync; otherwise run `dotfiles-sync apply`.
+SYNC_APPLY_MODE=manual
+# Push a successful store commit immediately; otherwise sync pushes it later.
+STORE_PUSH_MODE=manual
 # Generate store/remove commit messages only for interactive terminal sessions.
 INTERACTIVE_AUTO_MESSAGE=no
 # Path values are POSIX shell expressions and must expand to absolute paths.

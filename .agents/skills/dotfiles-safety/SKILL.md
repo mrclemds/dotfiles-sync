@@ -14,11 +14,12 @@ Apply this skill to all dotfiles and updater work.
 - Apply positive glob patterns from the configured runtime ignore file before
   staging or applying; keep those paths in `.gitignore` too.
 - Treat `store` as an explicit, interactive import from `$HOME`; validate path
-  containment, confirm overwrites, and do not push from `store` itself.
+  containment and confirm overwrites. It may push only when `STORE_PUSH_MODE=automatic`.
 - For non-interactive `store`, allow an optimistic first attempt only when no
   overwrite is needed; require a dry-run overwrite token before replacement.
-- Keep `check` read-only apart from refreshing remote tracking metadata; only
-  `sync` performs the bidirectional pull and push workflow.
+- Keep `check` read-only apart from refreshing remote tracking metadata; `sync`
+  performs the bidirectional pull and push workflow. `STORE_PUSH_MODE=automatic` also
+  pushes a successful `store` commit.
 - Never add credentials or private machine state to tracked files.
 - Keep generated state under the configured XDG state directory.
 - Updater configuration belongs under `.config/dotfiles-sync/` in the
