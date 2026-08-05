@@ -40,14 +40,15 @@ GitHub Codespaces.
   deployed with the applied revision.
 - Exclude positive glob patterns from the configured runtime ignore file before
   staging or applying, and keep those paths in `.gitignore` too.
-- Treat `store` as an explicit import from `$HOME`; validate containment,
-  confirm overwrites, and do not push from `store` itself.
+- Treat `store` as an explicit import from `$HOME`; validate containment and
+  confirm overwrites. It may push only when `STORE_PUSH_MODE=automatic`.
 - Non-interactive `store` and `remove` calls must provide `--message`; never use
   generated commit messages for agent actions.
 - Non-interactive `store` may proceed only without overwrites, or after a
   dry-run overwrite token is explicitly supplied; never use an overwrite bypass.
-- `sync` is the bidirectional pull/push operation; `check` only refreshes and
-  reports remote status without pulling, applying, or pushing.
+- `sync` is the bidirectional pull/push operation; `STORE_PUSH_MODE=automatic` also
+  pushes a successful `store` commit. `check` only refreshes and reports remote
+  status without pulling, applying, or pushing.
 - Keep runtime configuration in `~/.config/dotfiles-sync/` and runtime state in
   the XDG state directory.
 
