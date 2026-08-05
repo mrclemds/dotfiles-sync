@@ -64,8 +64,9 @@ Commands:
 Run `dotfiles-sync help COMMAND` or `dotfiles-sync COMMAND --help` for options.
 
 Safety:
-  sync stages changes but applies them only when APPLY_MODE=automatic; use apply
-  for the default manual mode. self-update downloads and validates a CLI release;
+  sync stages changes but applies them only when SYNC_APPLY_MODE=automatic; use apply
+  for the default manual mode. store pushes its commit only when STORE_PUSH_MODE=automatic.
+  self-update downloads and validates a CLI release;
   it never stages, applies, or pushes dotfiles. install is idempotent and repairs
   the CLI and scheduler.
 EOF
@@ -140,8 +141,25 @@ load_config() {
         BRANCH=$(remote_default_branch "$REMOTE") || die "could not determine the default branch; set BRANCH in $CONFIG_FILE"
     fi
     : "${POLL_INTERVAL:=21600}"
-    : "${APPLY_MODE:=manual}"
+    # APPLY_MODE was renamed in v1.2.1; honor it until the migration is applied.
+    if [ "${SYNC_APPLY_MODE+x}" != x ] && [ "${APPLY_MODE+x}" = x ]; then
+        SYNC_APPLY_MODE=$APPLY_MODE
+    fi
+    : "${SYNC_APPLY_MODE:=manual}"
+    # PUSH_MODE was renamed in v1.2.1; honor it until the migration is applied.
+    if [ "${STORE_PUSH_MODE+x}" != x ] && [ "${PUSH_MODE+x}" = x ]; then
+        STORE_PUSH_MODE=$PUSH_MODE
+    fi
+    : "${STORE_PUSH_MODE:=manual}"
     : "${INTERACTIVE_AUTO_MESSAGE:=no}"
+    case "$SYNC_APPLY_MODE" in
+        manual|prompt|automatic) ;;
+        *) die "SYNC_APPLY_MODE must be manual, prompt, or automatic" ;;
+    esac
+    case "$STORE_PUSH_MODE" in
+        manual|prompt|automatic) ;;
+        *) die "STORE_PUSH_MODE must be manual, prompt, or automatic" ;;
+    esac
     case "$INTERACTIVE_AUTO_MESSAGE" in
         yes|no) ;;
         *) die "INTERACTIVE_AUTO_MESSAGE must be yes or no" ;;
@@ -322,7 +340,7 @@ apply_pending() {
 show_status() {
     load_config
     printf 'Repository: %s\n' "$REPO_DIR"
-    printf 'Apply mode: %s\n' "$APPLY_MODE"
+    printf 'Sync apply mode: %s\n' "$SYNC_APPLY_MODE"
     printf 'Applied: %s\n' "$(cat "$STATE_DIR/applied-commit" 2>/dev/null || printf 'none')"
     printf 'Pending: %s\n' "$(cat "$STATE_DIR/pending-commit" 2>/dev/null || printf 'none')"
 }
@@ -493,7 +511,10 @@ store() {
         git -C "$REPO_DIR" add -- "$relative"
     done < "$STORE_FILES"
     git -C "$REPO_DIR" commit -m "$message"
-    log "stored and committed files; push the repository separately to synchronize other machines"
+    if [ "$STORE_PUSH_MODE" = automatic ]; then
+        push_once
+    fi
+    log "stored and committed files"
 }
 
 remove_path() {
@@ -658,6 +679,30 @@ check_once() {
     fi
 }
 
+push_local_changes() {
+    local_head=$(git rev-parse HEAD)
+    remote_head=$(git rev-parse "origin/$BRANCH")
+    if [ "$local_head" = "$remote_head" ]; then
+        log "synchronized at revision $local_head"
+    elif git merge-base --is-ancestor "origin/$BRANCH" HEAD; then
+        git push --quiet origin "HEAD:$BRANCH"
+        log "pushed revision $local_head"
+    elif git merge-base --is-ancestor HEAD "origin/$BRANCH"; then
+        die "remote has updates; run sync before pushing"
+    else
+        die "local and remote histories diverged; resolve manually in $REPO_DIR"
+    fi
+}
+
+push_once() {
+    load_config
+    ensure_dotfiles_checkout
+    cd "$REPO_DIR"
+    [ -z "$(git status --porcelain)" ] || die "local changes found in $REPO_DIR; refusing to push"
+    git fetch --quiet origin "$BRANCH"
+    push_local_changes
+}
+
 sync_once() {
     load_config
     ensure_dotfiles_checkout
@@ -672,24 +717,15 @@ sync_once() {
             commit=$(git rev-parse HEAD)
             stage_files "$commit"
             validate_stage "$PENDING_DIR/$commit"
-            if [ "$APPLY_MODE" = automatic ]; then
+            if [ "$SYNC_APPLY_MODE" = automatic ]; then
                 apply_pending
-            elif [ "$APPLY_MODE" != manual ] && [ "$APPLY_MODE" != prompt ]; then
-                die "APPLY_MODE must be manual, prompt, or automatic"
             fi
             log "pulled and staged revision $commit"
         elif ! git merge-base --is-ancestor "origin/$BRANCH" HEAD; then
             die "local and remote histories diverged; resolve manually in $REPO_DIR"
         fi
     fi
-    local_head=$(git rev-parse HEAD)
-    remote_head=$(git rev-parse "origin/$BRANCH")
-    if [ "$local_head" != "$remote_head" ]; then
-        git push --quiet origin "HEAD:$BRANCH"
-        log "pushed revision $local_head"
-    else
-        log "synchronized at revision $local_head"
-    fi
+    push_local_changes
 }
 
 deploy_tool_source() {
@@ -940,7 +976,8 @@ install_sync() {
 REMOTE=$remote
 BRANCH=$branch
 POLL_INTERVAL=21600
-APPLY_MODE=manual
+SYNC_APPLY_MODE=manual
+STORE_PUSH_MODE=manual
 # Generate store/remove commit messages only for interactive terminal sessions.
 INTERACTIVE_AUTO_MESSAGE=no
 IGNORE_FILE=$config_dir/ignore
