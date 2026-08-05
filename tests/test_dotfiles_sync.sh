@@ -115,6 +115,37 @@ git -C "$TEST_DIR/seed" push origin main >/dev/null
 "$TEST_DIR/tool/bin/dotfiles-sync" install --remote "$TEST_DIR/remote.git" --branch main >/dev/null
 assert_file "$HOME/.local/bin/dotfiles-sync"
 assert_file "$XDG_CONFIG_HOME/dotfiles-sync/config"
+migration_config=$TEST_DIR/migration-config
+printf '%s\n' 'PUSH_MODE=automatic' > "$migration_config"
+DOTFILES_SYNC_CONFIG_FILE=$migration_config \
+    DOTFILES_SYNC_CONFIG_DIR=$XDG_CONFIG_HOME/dotfiles-sync \
+    DOTFILES_SYNC_STATE_DIR=$XDG_STATE_HOME/dotfiles-sync \
+    sh "$ROOT/.config/dotfiles-sync/migrations/v1.2.1.sh"
+assert_contains "$migration_config" 'STORE_PUSH_MODE=automatic'
+if grep -q '^PUSH_MODE=' "$migration_config"; then
+    fail "store push migration retained legacy setting"
+fi
+# The migration must remain safe when a release retries it after an interruption.
+DOTFILES_SYNC_CONFIG_FILE=$migration_config \
+    DOTFILES_SYNC_CONFIG_DIR=$XDG_CONFIG_HOME/dotfiles-sync \
+    DOTFILES_SYNC_STATE_DIR=$XDG_STATE_HOME/dotfiles-sync \
+    sh "$ROOT/.config/dotfiles-sync/migrations/v1.2.1.sh"
+assert_contains "$migration_config" 'STORE_PUSH_MODE=automatic'
+migration_apply_config=$TEST_DIR/migration-apply-config
+printf '%s\n' 'APPLY_MODE=automatic' > "$migration_apply_config"
+DOTFILES_SYNC_CONFIG_FILE=$migration_apply_config \
+    DOTFILES_SYNC_CONFIG_DIR=$XDG_CONFIG_HOME/dotfiles-sync \
+    DOTFILES_SYNC_STATE_DIR=$XDG_STATE_HOME/dotfiles-sync \
+    sh "$ROOT/.config/dotfiles-sync/migrations/v1.2.1.sh"
+assert_contains "$migration_apply_config" 'SYNC_APPLY_MODE=automatic'
+if grep -q '^APPLY_MODE=' "$migration_apply_config"; then
+    fail "sync apply migration retained legacy setting"
+fi
+DOTFILES_SYNC_CONFIG_FILE=$migration_apply_config \
+    DOTFILES_SYNC_CONFIG_DIR=$XDG_CONFIG_HOME/dotfiles-sync \
+    DOTFILES_SYNC_STATE_DIR=$XDG_STATE_HOME/dotfiles-sync \
+    sh "$ROOT/.config/dotfiles-sync/migrations/v1.2.1.sh"
+assert_contains "$migration_apply_config" 'SYNC_APPLY_MODE=automatic'
 # The runtime config must retain this expression for the updater to expand.
 # shellcheck disable=SC2016
 printf '%s\n' 'IGNORE_FILE="${HOME:-/test}/.config/dotfiles-sync/ignore"' \
@@ -155,5 +186,11 @@ git -C "$TEST_DIR/seed" push origin main >/dev/null
 "$HOME/.local/bin/dotfiles-sync" apply >/dev/null
 assert_file "$HOME/managed.txt"
 assert_contains "$HOME/managed.txt" two
+
+sed -i 's/^STORE_PUSH_MODE=manual$/STORE_PUSH_MODE=automatic/' "$XDG_CONFIG_HOME/dotfiles-sync/config"
+printf 'push automatically\n' > "$HOME/push.txt"
+"$HOME/.local/bin/dotfiles-sync" store --non-interactive --message "test: automatic push" "$HOME/push.txt" >/dev/null
+git --git-dir="$TEST_DIR/remote.git" show main:push.txt >/dev/null \
+    || fail "automatic store push did not push local commit"
 
 printf '%s\n' 'dotfiles-sync tests passed'

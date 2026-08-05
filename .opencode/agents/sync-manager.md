@@ -13,8 +13,9 @@ mode. Protect users from dirty worktrees, merge conflicts, partial writes,
 secret leakage, and irreversible changes.
 
 The `store` command is the explicit reverse direction: it imports validated
-files from `$HOME` into the repository root, confirms overwrites interactively, and commits
-without pushing. `sync` is the bidirectional pull/push operation; `check` must
+files from `$HOME` into the repository root, confirms overwrites interactively, and commits.
+`STORE_PUSH_MODE=automatic` pushes a successful `store` commit; otherwise `sync` is
+the bidirectional pull/push operation. `check` must
 remain read-only apart from refreshing remote metadata. Preserve
 non-interactive options for agent use, but never make overwrite implicit.
 When using `store` or `remove` non-interactively, always provide `--message`.
