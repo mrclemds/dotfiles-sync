@@ -181,6 +181,27 @@ commit_body=$(git -C "$XDG_DATA_HOME/dotfiles-sync/dotfiles" log -1 --format=%B)
 printf '%s\n' "$commit_body" > "$TEST_DIR/co-owner-commit"
 assert_contains "$TEST_DIR/co-owner-commit" 'Co-authored-by: Agent One <agent-one@example.invalid>'
 assert_contains "$TEST_DIR/co-owner-commit" 'Co-authored-by: Agent Two <agent-two@example.invalid>'
+
+printf 'copilot\n' > "$HOME/copilot.txt"
+"$HOME/.local/bin/dotfiles-sync" store --non-interactive --message "test: bot co-owners" \
+    --co-owner "Copilot" '223556219+Copilot@users.noreply.github.com' \
+    --co-owner 'github-actions[bot]' 'github-actions[bot]@users.noreply.github.com' \
+    "$HOME/copilot.txt" >/dev/null
+commit_body=$(git -C "$XDG_DATA_HOME/dotfiles-sync/dotfiles" log -1 --format=%B)
+printf '%s\n' "$commit_body" > "$TEST_DIR/bot-co-owner-commit"
+assert_contains "$TEST_DIR/bot-co-owner-commit" 'Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>'
+assert_contains "$TEST_DIR/bot-co-owner-commit" 'Co-authored-by: github-actions[bot] <github-actions[bot]@users.noreply.github.com>'
+printf 'human\n' > "$HOME/human.txt"
+"$HOME/.local/bin/dotfiles-sync" store --dry-run --non-interactive --message "test: human co-owner" \
+    --co-owner "Jane Doe" jane.doe@example.invalid "$HOME/human.txt" >/dev/null
+if "$HOME/.local/bin/dotfiles-sync" store --dry-run --non-interactive --message "test: malformed name" \
+    --co-owner 'Bad<Name' bad@example.invalid "$HOME/human.txt" >/dev/null 2>&1; then
+    fail "malformed co-owner name was accepted"
+fi
+if "$HOME/.local/bin/dotfiles-sync" store --dry-run --non-interactive --message "test: malformed email" \
+    --co-owner "Jane Doe" 'bad email' "$HOME/human.txt" >/dev/null 2>&1; then
+    fail "malformed co-owner email was accepted"
+fi
 if "$HOME/.local/bin/dotfiles-sync" store --non-interactive --message "test: duplicate co-owner" \
     --co-owner "Agent One" agent-one@example.invalid "$HOME/co-owned.txt" >/dev/null 2>&1; then
     fail "duplicate co-owner was accepted"
