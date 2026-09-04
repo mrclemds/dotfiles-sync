@@ -82,6 +82,15 @@ dotfiles-sync store --dry-run --non-interactive --message "Update configuration"
 dotfiles-sync store --non-interactive --confirm-overwrite TOKEN --message "Update configuration" ~/.config/example/config
 ```
 
+Agents may add themselves as co-owners of a `store` commit with the repeatable
+`--co-owner NAME EMAIL` option. The commit records each identity as a canonical
+`Co-authored-by: NAME <EMAIL>` trailer:
+
+```sh
+dotfiles-sync store --non-interactive --message "Update configuration" \
+  --co-owner "Agent Name" agent@example.invalid ~/.config/example/config
+```
+
 Use `remove` to stop managing a tracked regular file while leaving the local
 file in place:
 

@@ -153,12 +153,17 @@ printf '%s\n' 'IGNORE_FILE="${HOME:-/test}/.config/dotfiles-sync/ignore"' \
 printf 'one\n' > "$HOME/managed.txt"
 "$HOME/.local/bin/dotfiles-sync" help store > "$TEST_DIR/store-help"
 assert_contains "$TEST_DIR/store-help" 'Usage: dotfiles-sync store [OPTIONS] PATH...'
+assert_contains "$TEST_DIR/store-help" '--co-owner NAME EMAIL'
 "$HOME/.local/bin/dotfiles-sync" remove --help > "$TEST_DIR/remove-help"
 assert_contains "$TEST_DIR/remove-help" --remove-original
 
 printf 'stored\n' > "$HOME/store.txt"
 if "$HOME/.local/bin/dotfiles-sync" store --non-interactive --auto-message "$HOME/store.txt" >/dev/null 2>&1; then
     fail "non-interactive store accepted --auto-message"
+fi
+if "$HOME/.local/bin/dotfiles-sync" remove --non-interactive --message "test: invalid option" \
+    --co-owner Agent agent@example.invalid "$HOME/store.txt" >/dev/null 2>&1; then
+    fail "remove accepted --co-owner"
 fi
 "$HOME/.local/bin/dotfiles-sync" store --non-interactive --message "test: store file" "$HOME/store.txt" >/dev/null
 assert_file "$XDG_DATA_HOME/dotfiles-sync/dotfiles/store.txt"
@@ -167,6 +172,19 @@ assert_file "$XDG_DATA_HOME/dotfiles-sync/dotfiles/store.txt"
 assert_file "$HOME/store.txt"
 assert_missing "$XDG_DATA_HOME/dotfiles-sync/dotfiles/store.txt"
 git -C "$XDG_DATA_HOME/dotfiles-sync/dotfiles" reset --hard origin/main >/dev/null
+
+printf 'co-owned\n' > "$HOME/co-owned.txt"
+"$HOME/.local/bin/dotfiles-sync" store --non-interactive --message "test: co-owned store" \
+    --co-owner "Agent One" agent-one@example.invalid \
+    --co-owner "Agent Two" agent-two@example.invalid "$HOME/co-owned.txt" >/dev/null
+commit_body=$(git -C "$XDG_DATA_HOME/dotfiles-sync/dotfiles" log -1 --format=%B)
+printf '%s\n' "$commit_body" > "$TEST_DIR/co-owner-commit"
+assert_contains "$TEST_DIR/co-owner-commit" 'Co-authored-by: Agent One <agent-one@example.invalid>'
+assert_contains "$TEST_DIR/co-owner-commit" 'Co-authored-by: Agent Two <agent-two@example.invalid>'
+if "$HOME/.local/bin/dotfiles-sync" store --non-interactive --message "test: duplicate co-owner" \
+    --co-owner "Agent One" agent-one@example.invalid "$HOME/co-owned.txt" >/dev/null 2>&1; then
+    fail "duplicate co-owner was accepted"
+fi
 
 "$HOME/.local/bin/dotfiles-sync" remove --dry-run --non-interactive --remove-original "$HOME/managed.txt" \
     > "$TEST_DIR/remove-dry-run"
