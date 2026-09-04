@@ -82,6 +82,7 @@ Copy regular files from $HOME into the managed repository root and commit them.
 
 Options:
   -m, --message MESSAGE   Commit with MESSAGE.
+  --co-owner NAME EMAIL    Add NAME <EMAIL> as a commit co-owner; repeatable.
   --dry-run               Preview required overwrite confirmation.
   --confirm-overwrite ID  Confirm the ID returned by --dry-run.
   --non-interactive       Do not prompt for a commit message or overwrite.
@@ -399,21 +400,43 @@ store() {
     dry_run=no
     confirm_token=
     non_interactive=no
+    co_owners_file=$STATE_DIR/store-co-owners.$$
     paths_file=$STATE_DIR/store-paths.$$
     STORE_PLAN=$STATE_DIR/store-plan.$$
     STORE_OVERWRITES=$STATE_DIR/store-overwrites.$$
     STORE_FILES=$STATE_DIR/store-files.$$
-    trap 'rm -f "$paths_file" "$STORE_PLAN" "$STORE_OVERWRITES" "$STORE_FILES" "$paths_file.files"' 0 1 2 3 15
+    trap 'rm -f "$paths_file" "$STORE_PLAN" "$STORE_OVERWRITES" "$STORE_FILES" "$co_owners_file" "$paths_file.files"' 0 1 2 3 15
     : > "$paths_file"
     : > "$STORE_PLAN"
     : > "$STORE_OVERWRITES"
     : > "$STORE_FILES"
+    : > "$co_owners_file"
     while [ "$#" -gt 0 ]; do
         case "$1" in
             --message|-m)
                 [ "$#" -ge 2 ] || die "$1 requires a message"
                 message=$2
                 shift 2
+                ;;
+            --co-owner)
+                [ "$#" -ge 3 ] || die "--co-owner requires a name and email"
+                co_owner_name=$2
+                co_owner_email=$3
+                case "$co_owner_name" in
+                    ''|-*|*[!A-Za-z0-9\ ._\'-]*) die "invalid co-owner name" ;;
+                esac
+                case "$co_owner_email" in
+                    ''|-*|*[!A-Za-z0-9@._%+-]*) die "invalid co-owner email" ;;
+                esac
+                case "$co_owner_email" in
+                    *@*.*) : ;;
+                    *) die "invalid co-owner email" ;;
+                esac
+                co_owner="$co_owner_name <$co_owner_email>"
+                grep -F -x -- "$co_owner" "$co_owners_file" >/dev/null 2>&1 \
+                    && die "duplicate co-owner: $co_owner"
+                printf '%s\n' "$co_owner" >> "$co_owners_file"
+                shift 3
                 ;;
             --confirm-overwrite)
                 [ "$#" -ge 2 ] || die "--confirm-overwrite requires a signature"
@@ -510,7 +533,13 @@ store() {
     while IFS= read -r relative; do
         git -C "$REPO_DIR" add -- "$relative"
     done < "$STORE_FILES"
-    git -C "$REPO_DIR" commit -m "$message"
+    set -- git -C "$REPO_DIR" commit -m "$message"
+    while IFS= read -r co_owner; do
+        [ -n "$co_owner" ] || continue
+        set -- "$@" --trailer "Co-authored-by=$co_owner"
+    done < "$co_owners_file"
+    # Keep Git's trailer parser in charge without using eval on user input.
+    "$@"
     log "stored and committed files"
     if [ "$STORE_PUSH_MODE" = automatic ]; then
         push_once
