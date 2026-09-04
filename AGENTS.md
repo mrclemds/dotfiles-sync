@@ -21,6 +21,9 @@ deploy across multiple machines.
 - Create `release/vMAJOR.MINOR` only when the user explicitly requests a
   diverging minor maintenance line. A minor version request alone releases from
   the existing major maintenance branch.
+- Use semantic release levels consistently: new backward-compatible features
+  are minor releases, breaking changes are major releases, and fixes only are
+  patch releases.
 - Do not commit, push, or create pull requests unless explicitly requested.
 - When shared behavior changes, keep `.github/copilot-instructions.md` and the
   OpenCode files under `.opencode/`, and Codex skills under `.agents/skills/`
@@ -39,6 +42,9 @@ deploy across multiple machines.
 
 - `sync` pulls and stages; it must not modify files in `$HOME` in manual mode.
 - `apply` is the only normal operation that changes managed files in `$HOME`.
+- `apply --force` may rebuild the pending snapshot from the clean managed
+  checkout `HEAD` when state is stale; it must validate, back up, overwrite,
+  and update applied state just like a normal apply.
 - `store` is the explicit operation that copies files from `$HOME` into the
   configured dotfiles root and creates a commit; it must validate that sources are
   inside `$HOME`.

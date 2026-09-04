@@ -205,6 +205,16 @@ assert_contains "$TEST_DIR/manual-sync.log" 'pulled and staged revision'
 "$HOME/.local/bin/dotfiles-sync" apply >/dev/null
 assert_file "$HOME/managed.txt"
 assert_contains "$HOME/managed.txt" two
+"$HOME/.local/bin/dotfiles-sync" help apply > "$TEST_DIR/apply-help"
+assert_contains "$TEST_DIR/apply-help" '--force'
+printf 'locally broken\n' > "$HOME/managed.txt"
+rm -f "$XDG_STATE_HOME/dotfiles-sync/applied-commit" "$XDG_STATE_HOME/dotfiles-sync/pending-commit"
+"$HOME/.local/bin/dotfiles-sync" apply --force > "$TEST_DIR/force-apply.log"
+assert_contains "$HOME/managed.txt" two
+assert_contains "$TEST_DIR/force-apply.log" 'applied revision'
+[ -r "$XDG_STATE_HOME/dotfiles-sync/applied-commit" ] || fail "force apply did not update state"
+[ "$(cat "$XDG_STATE_HOME/dotfiles-sync/applied-commit")" = "$(git -C "$TEST_DIR/seed" rev-parse HEAD)" ] \
+    || fail "force apply recorded the wrong revision"
 
 sed -i 's/^SYNC_APPLY_MODE=manual$/SYNC_APPLY_MODE=automatic/' "$XDG_CONFIG_HOME/dotfiles-sync/config"
 printf 'three\n' > "$TEST_DIR/seed/managed.txt"

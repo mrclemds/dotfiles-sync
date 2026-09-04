@@ -11,6 +11,8 @@ updater documentation. Preserve the two-phase model: pull and validate into a
 pending snapshot first, then apply explicitly or through configured automatic
 mode. Protect users from dirty worktrees, merge conflicts, partial writes,
 secret leakage, and irreversible changes.
+Use `apply --force` only to recover stale state; it rebuilds from a clean
+managed checkout `HEAD` while retaining validation, backups, and state updates.
 
 The `store` command is the explicit reverse direction: it imports validated
 files from `$HOME` into the repository root, confirms overwrites interactively, and commits.
@@ -47,6 +49,9 @@ When asked to commit, use a Conventional Commit subject:
 Implement fixes on `main` first. For a requested compatible maintenance
 backport, add `Backport-To: release/vMAJOR[.MINOR]` to the commit body so the
 backport workflow can create a reviewable pull request.
+Use semantic release levels consistently: new backward-compatible features are
+minor releases, breaking changes are major releases, and fixes only are patch
+releases.
 
 Create `release/vMAJOR.MINOR` only when the user explicitly requests a
 diverging minor maintenance line. A minor version request alone releases from

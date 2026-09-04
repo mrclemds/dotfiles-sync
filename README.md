@@ -74,6 +74,11 @@ pushes the reviewed commit later; set `STORE_PUSH_MODE=automatic` to push it
 immediately. Existing destination files require an interactive overwrite
 confirmation.
 
+If synchronization state is stale or incorrectly reports nothing to apply, use
+`dotfiles-sync apply --force` to rebuild the snapshot from the managed checkout
+`HEAD` and redeploy it. This still validates files, creates a backup, and updates
+the applied revision state.
+
 For agents and other non-interactive callers, supply a message. If replacement
 is needed, first request a dry run and then pass its confirmation token:
 

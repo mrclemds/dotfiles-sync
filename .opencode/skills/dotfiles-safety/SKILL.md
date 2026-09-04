@@ -35,6 +35,9 @@ Apply this skill to all dotfiles and updater work.
 - Create `release/vMAJOR.MINOR` only when the user explicitly requests a
   diverging minor maintenance line. A minor version request alone releases from
   the existing major maintenance branch.
+- Use semantic release levels consistently: new backward-compatible features
+  are minor releases, breaking changes are major releases, and fixes only are
+  patch releases.
 
 ## Update Lifecycle
 
@@ -48,6 +51,10 @@ The safe lifecycle is:
 5. Back up current destinations.
 6. Copy through temporary files and rename into place.
 7. Record the applied revision and retain rollback data.
+
+`apply --force` is the recovery path when pending state is stale or missing. It
+rebuilds the snapshot from a clean managed checkout `HEAD` and must use the
+same validation, backup, deployment, and applied-state recording steps.
 
 Never apply directly from a remote ref or from an unvalidated checkout. Run an
 after-apply hook only when it is tracked, non-ignored, validated, and deployed

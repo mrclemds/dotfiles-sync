@@ -32,7 +32,8 @@ show_help() {
         uninstall) show_uninstall_help; return ;;
         store) show_store_help; return ;;
         remove) show_remove_help; return ;;
-        self-update|sync|check|apply|status|rollback|daemon)
+        apply) show_apply_help; return ;;
+        self-update|sync|check|status|rollback|daemon)
             printf 'Usage: dotfiles-sync %s\n' "$command"
             return
             ;;
@@ -53,7 +54,7 @@ Commands:
   self-update             Download and install the latest CLI release.
   sync                    Fetch, fast-forward, stage managed files, and push.
   check                   Fetch metadata and report repository status only.
-  apply                   Apply the staged revision to $HOME with a backup.
+   apply [--force]         Apply the staged revision to $HOME with a backup.
   status                  Show the configured repository and revision state.
   rollback [BACKUP]       Restore the latest backup, or BACKUP if specified.
   store [OPTIONS] PATH... Copy files from $HOME into the repository root and commit.
@@ -101,6 +102,18 @@ Options:
   --dry-run               Preview removal and print a confirmation token.
   --confirm-remove ID     Confirm the ID returned by --dry-run.
   --non-interactive       Do not prompt for a commit message or home-file removal.
+EOF
+}
+
+show_apply_help() {
+    cat <<'EOF'
+Usage: dotfiles-sync apply [OPTIONS]
+
+Apply the staged revision to $HOME with a backup.
+
+Options:
+  --force                 Rebuild the snapshot from the managed checkout HEAD
+                          and overwrite configured files even without pending state.
 EOF
 }
 
@@ -303,9 +316,18 @@ run_after_apply_hook() {
 }
 
 apply_pending() {
+    force=${1:-no}
     load_config
-    [ -r "$STATE_DIR/pending-commit" ] || die "no pending update"
-    commit=$(cat "$STATE_DIR/pending-commit")
+    if [ "$force" = yes ]; then
+        ensure_dotfiles_checkout
+        [ -z "$(git -C "$REPO_DIR" status --porcelain)" ] || die "local changes found in $REPO_DIR; refusing to force apply"
+        commit=$(git -C "$REPO_DIR" rev-parse HEAD)
+        stage_files "$commit"
+    else
+        [ -r "$STATE_DIR/pending-commit" ] || die "no pending update"
+        commit=$(cat "$STATE_DIR/pending-commit")
+    fi
+    [ -n "$commit" ] || die "pending revision is empty"
     stage=$PENDING_DIR/$commit
     [ -d "$stage" ] || die "pending snapshot is missing: $stage"
     validate_stage "$stage"
@@ -1179,7 +1201,19 @@ case "${1:-sync}" in
     self-update) self_update ;;
     sync) sync_once ;;
     check) check_once ;;
-    apply) apply_pending ;;
+    apply)
+        shift
+        case "${1:-}" in
+            '') apply_pending ;;
+            --help|-h) show_apply_help ;;
+            --force)
+                shift
+                [ "$#" -eq 0 ] || die "unknown apply option: $1"
+                apply_pending yes
+                ;;
+            *) die "unknown apply option: $1" ;;
+        esac
+        ;;
     status) show_status ;;
     rollback) rollback "${2:-}" ;;
     store)
