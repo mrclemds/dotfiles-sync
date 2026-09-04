@@ -20,12 +20,17 @@ GitHub Codespaces.
 - Create `release/vMAJOR.MINOR` only when the user explicitly requests a
   diverging minor maintenance line. A minor version request alone releases from
   the existing major maintenance branch.
+- Use semantic release levels consistently: new backward-compatible features
+  are minor releases, breaking changes are major releases, and fixes only are
+  patch releases.
 - Do not commit, push, or create pull requests unless explicitly requested.
 
 ## Dotfiles Sync Contract
 
 - `sync` fetches and stages; in manual mode it must not modify `$HOME`.
 - `apply` is the normal operation that changes managed files in `$HOME`.
+- `apply --force` may recover stale state by rebuilding from the clean managed
+  checkout `HEAD`; it must retain validation, backups, and applied-state updates.
 - Accept only fast-forward updates for the configured dotfiles repository and
   reject dirty checkouts.
 - CLI self-updates must download a validated HTTPS release archive and replace
