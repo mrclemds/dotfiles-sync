@@ -169,10 +169,11 @@ workflow requires a successful `Test` run for the exact source commit, validates
 the source branch, serializes publication, creates or verifies the tag, and
 publishes `dotfiles-sync.tgz`.
 
-The initial `v1.0.0` release creates `release/v1` from `main`. To start a
-diverging minor line, run `Create Minor Maintenance Branch` from `release/v1`
-with `v1.2`; it creates `release/v1.2`. Then release `v1.2.0` from that branch.
-Patch releases use the matching existing maintenance branch.
+The initial `v1.0.0` release creates `release/v1` from `main`. A new minor
+release such as `v1.3.0` runs from `main` and creates `release/v1.3`
+automatically. Patch releases use the matching existing maintenance branch.
+Use `Create Minor Maintenance Branch` only when a diverging minor line must be
+created before its first release.
 
 Release archives contain the installer bootstrap, CLI, GPL-3.0 license, release
 metadata, configuration examples, migrations, scheduler templates, and this
