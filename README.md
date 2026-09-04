@@ -167,17 +167,20 @@ trusting the relevant workflow. With `STORE_PUSH_MODE=automatic`, a successful
 
 ## Releases
 
-Releases are created through the manual `Release` workflow from a protected
-source branch. Supply a full semantic tag such as `v1.0.0` or `v1.2.3`. The
-workflow requires a successful `Test` run for the exact source commit, validates
-the source branch, serializes publication, creates or verifies the tag, and
+Releases are created through the manual `Release` workflow. Select the source
+branch, tag, or commit to release and supply a full semantic tag such as
+`v1.0.0` or `v1.2.3`. The workflow requires a successful `Test` run for the
+exact source commit, serializes publication, creates or verifies the tag, and
 publishes `dotfiles-sync.tgz`.
 
-The initial `v1.0.0` release creates `release/v1` from `main`. A new minor
-release such as `v1.3.0` runs from `main` and creates `release/v1.3`
-automatically. Patch releases use the matching existing maintenance branch.
-Use `Create Minor Maintenance Branch` only when a diverging minor line must be
-created before its first release.
+Maintenance branch management is controlled by the `release_maintenance_branch`
+input, which defaults to `false`. When enabled, the first non-zero version
+component selects the branch: `vX.Y.Z` and `vX.Y.0` use `release/vX.Y` when
+`Y > 0`, while `vX.0.0` and `vX.0.Z` use `release/vX`. The workflow creates a
+missing branch from a source reachable from `main`, or fast-forward-updates an
+existing branch. When disabled, the workflow does not create or update a
+maintenance branch; it publishes only releases sourced from `main`. Enable it
+when releasing from an older maintenance branch, tag, or commit.
 
 Release archives contain the installer bootstrap, CLI, GPL-3.0 license, release
 metadata, configuration examples, migrations, scheduler templates, and this
