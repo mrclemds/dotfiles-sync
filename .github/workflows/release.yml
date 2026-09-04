@@ -7,6 +7,11 @@ on:
         description: Version tag to create, such as v1.0.0 or v1.2.3 (must start with v)
         required: true
         type: string
+      release_maintenance_branch:
+        description: Create or update the matching maintenance branch
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: release-publication
@@ -56,52 +61,16 @@ jobs:
             printf 'Unsupported release tag: %s\n' "$TAG" >&2
             exit 1
           }
-          case "$version" in
-            *.*)
-              major=${version%%.*}
-              minor_and_patch=${version#*.}
-              minor=${minor_and_patch%%.*}
-              patch=${minor_and_patch#*.}
-              if [ "$patch" = "$minor_and_patch" ]; then
-                patch=
-              fi
-              minor_branch="release/v${major}.${minor}"
-              major_branch="release/v${major}"
-              if git ls-remote --exit-code --heads origin "refs/heads/$minor_branch" >/dev/null 2>&1; then
-                branch=$minor_branch
-              elif git ls-remote --exit-code --heads origin "refs/heads/$major_branch" >/dev/null 2>&1; then
-                branch=$major_branch
-              else
-                if [ "$patch" = 0 ]; then
-                  branch=$major_branch
-                  create_branch=yes
-                else
-                  printf 'No maintenance branch exists for %s; create %s on demand\n' "$TAG" "$minor_branch" >&2
-                  exit 1
-                fi
-              fi
-              : "${create_branch:=no}"
-              ;;
-            *)
-              branch="release/v${version}"
-              if git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1; then
-                create_branch=no
-              else
-                create_branch=yes
-              fi
-              ;;
-          esac
-          if [ "$create_branch" = yes ]; then
-            expected_source=main
-          else
-            expected_source=$branch
-          fi
-          if [ "$GITHUB_REF_NAME" != "$expected_source" ]; then
-            printf 'Release %s must run from %s, not %s\n' "$TAG" "$expected_source" "$GITHUB_REF_NAME" >&2
+          if [ "${{ inputs.release_maintenance_branch }}" != true ] && [ "$GITHUB_REF_NAME" != main ]; then
+            printf 'Release %s without maintenance branch management must run from main, not %s\n' \
+              "$TAG" "$GITHUB_REF_NAME" >&2
             exit 1
           fi
+          branch=
+          if [ "${{ inputs.release_maintenance_branch }}" = true ]; then
+            branch=$(release_maintenance_branch "$TAG")
+          fi
           printf 'branch=%s\n' "$branch" >> "$GITHUB_OUTPUT"
-          printf 'create_branch=%s\n' "$create_branch" >> "$GITHUB_OUTPUT"
 
       - name: Create release tag
         run: |
@@ -121,16 +90,27 @@ jobs:
           fi
 
       - name: Create maintenance branch
+        if: ${{ inputs.release_maintenance_branch }}
         env:
           BRANCH: ${{ steps.release_source.outputs.branch }}
-          CREATE_BRANCH: ${{ steps.release_source.outputs.create_branch }}
         run: |
           set -eu
-          if [ "$CREATE_BRANCH" = yes ]; then
+          if git ls-remote --exit-code --heads origin "refs/heads/$BRANCH" >/dev/null 2>&1; then
+            git fetch --quiet origin "$BRANCH"
+            if ! git merge-base --is-ancestor "origin/$BRANCH" "$GITHUB_SHA"; then
+              printf 'Release %s is not a fast-forward update to %s\n' "$TAG" "$BRANCH" >&2
+              exit 1
+            fi
+            git push origin "$GITHUB_SHA:refs/heads/$BRANCH"
+            printf 'Updated maintenance branch: %s\n' "$BRANCH"
+          else
+            git fetch --quiet origin main
+            if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+              printf 'New maintenance branch source must be reachable from main\n' >&2
+              exit 1
+            fi
             git push origin "$GITHUB_SHA:refs/heads/$BRANCH"
             printf 'Created maintenance branch: %s\n' "$BRANCH"
-          else
-            printf 'Maintenance branch already exists: %s\n' "$BRANCH"
           fi
 
       - name: Select latest release
@@ -202,6 +182,7 @@ jobs:
 
   cleanup-migrations:
     needs: release
+    if: ${{ inputs.release_maintenance_branch }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

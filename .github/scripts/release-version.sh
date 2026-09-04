@@ -34,6 +34,18 @@ release_version_parts() {
     printf '%s %s %s\n' "$major" "$minor" "$patch"
 }
 
+release_maintenance_branch() {
+    parts=$(release_version_parts "$1") || return 1
+    IFS=' ' read -r major minor patch <<EOF
+$parts
+EOF
+    if [ "$minor" -gt 0 ]; then
+        printf 'release/v%s.%s\n' "$major" "$minor"
+    else
+        printf 'release/v%s\n' "$major"
+    fi
+}
+
 release_version_is_greater() {
     candidate=$1
     current=$2
