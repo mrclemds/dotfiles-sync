@@ -82,6 +82,10 @@ the applied revision state.
 For agents and other non-interactive callers, supply a message. If replacement
 is needed, first request a dry run and then pass its confirmation token:
 
+Co-owner names and email addresses are passed as separate arguments. GitHub bot
+identities such as `Copilot <223556219+Copilot@users.noreply.github.com>` and
+`github-actions[bot] <github-actions[bot]@users.noreply.github.com>` are valid.
+
 ```sh
 dotfiles-sync store --dry-run --non-interactive --message "Update configuration" ~/.config/example/config
 dotfiles-sync store --non-interactive --confirm-overwrite TOKEN --message "Update configuration" ~/.config/example/config
