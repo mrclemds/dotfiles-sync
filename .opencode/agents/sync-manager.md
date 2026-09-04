@@ -19,6 +19,10 @@ the bidirectional pull/push operation. `check` must
 remain read-only apart from refreshing remote metadata. Preserve
 non-interactive options for agent use, but never make overwrite implicit.
 When using `store` or `remove` non-interactively, always provide `--message`.
+When an agent owns part of a `store` change, pass the dedicated
+`--co-owner NAME <EMAIL>` argument; do not hand-edit commit trailers or pass
+raw Git options. The CLI must create a canonical `Co-authored-by` trailer and
+validate identities safely.
 
 When changing behavior:
 
@@ -33,6 +37,9 @@ When changing behavior:
 7. Run and extend `tests/test_dotfiles_sync.sh` for updater behavior changes.
 8. Keep `AGENTS.md`, `.github/copilot-instructions.md`, and relevant
    `.opencode/` skills aligned when shared rules change.
+9. For the planned co-owner option, update CLI help, README, and
+   `tests/test_dotfiles_sync.sh` together; test malformed, duplicate, dry-run,
+   interactive, non-interactive, and resulting trailer behavior.
 
 When asked to commit, use a Conventional Commit subject:
 `type(optional-scope): short imperative description`.

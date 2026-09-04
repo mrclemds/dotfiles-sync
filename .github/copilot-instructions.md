@@ -44,6 +44,10 @@ GitHub Codespaces.
   confirm overwrites. It may push only when `STORE_PUSH_MODE=automatic`.
 - Non-interactive `store` and `remove` calls must provide `--message`; never use
   generated commit messages for agent actions.
+- Agents adding themselves to a `store` commit must use the dedicated
+  `--co-owner NAME <EMAIL>` argument. The CLI must emit a canonical
+  `Co-authored-by: NAME <EMAIL>` trailer, validate identity input, and reject
+  malformed, duplicate, or option-injection input; never hand-edit trailers.
 - Non-interactive `store` may proceed only without overwrites, or after a
   dry-run overwrite token is explicitly supplied; never use an overwrite bypass.
 - `sync` is the bidirectional pull/push operation; `STORE_PUSH_MODE=automatic` also
