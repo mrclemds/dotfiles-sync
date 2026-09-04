@@ -445,10 +445,10 @@ store() {
                 co_owner_name=$2
                 co_owner_email=$3
                 case "$co_owner_name" in
-                    ''|-*|*[!A-Za-z0-9\ ._\'-]*) die "invalid co-owner name" ;;
+                    ''|-*|*[!A-Za-z0-9\ ._\[\]\'-]*) die "invalid co-owner name" ;;
                 esac
                 case "$co_owner_email" in
-                    ''|-*|*[!A-Za-z0-9@._%+-]*) die "invalid co-owner email" ;;
+                    ''|-*|*[!A-Za-z0-9@._%+\[\]-]*) die "invalid co-owner email" ;;
                 esac
                 case "$co_owner_email" in
                     *@*.*) : ;;
