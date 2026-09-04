@@ -72,7 +72,7 @@ jobs:
               elif git ls-remote --exit-code --heads origin "refs/heads/$major_branch" >/dev/null 2>&1; then
                 branch=$major_branch
               else
-                if [ "$minor" = 0 ] && [ "$patch" = 0 ]; then
+                if [ "$patch" = 0 ]; then
                   branch=$major_branch
                   create_branch=yes
                 else
