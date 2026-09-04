@@ -41,6 +41,12 @@ deploy across multiple machines.
   inside `$HOME`.
 - Non-interactive `store` and `remove` calls must provide `--message`; do not use
   generated commit messages for agent actions.
+- Agent-authored `store` commits may add the agent as a co-owner with the
+  dedicated `--co-owner NAME <EMAIL>` argument. The implementation must emit a
+  canonical `Co-authored-by: NAME <EMAIL>` trailer, validate the identity
+  without accepting arbitrary commit-argument injection, and reject duplicate
+  or malformed trailers. Do not hand-edit trailers or pass raw `git commit`
+  options.
 - Configured dotfiles updates must be fast-forward only and dirty checkouts must
   be rejected.
 - CLI self-updates must download a validated HTTPS release archive and replace
@@ -59,3 +65,17 @@ deploy across multiple machines.
   deployed with the applied revision.
 - Updater configuration belongs under `.config/dotfiles-sync/` in the
   repository and `~/.config/dotfiles-sync/` at runtime.
+
+## Co-Owner Implementation Plan
+
+- Add `--co-owner NAME <EMAIL>` to `store` only; keep it repeatable for multiple
+  agents and reject it for `remove` unless a later requirement explicitly
+  expands the scope.
+- Parse and validate the name/email as one identity, construct trailers with
+  Git's trailer-safe mechanism, and preserve the supplied commit message.
+- Cover interactive and non-interactive `store`, dry runs, malformed input,
+  duplicate identities, and the resulting commit metadata in
+  `tests/test_dotfiles_sync.sh`.
+- Update `README.md`, help output, and all mirrored agent guidance when the CLI
+  behavior is implemented; run shell syntax, ShellCheck, focused tests, and
+  `git diff --check`.

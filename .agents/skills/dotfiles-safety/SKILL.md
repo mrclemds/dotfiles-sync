@@ -17,6 +17,10 @@ Apply this skill to all dotfiles and updater work.
   containment and confirm overwrites. It may push only when `STORE_PUSH_MODE=automatic`.
 - For non-interactive `store`, allow an optimistic first attempt only when no
   overwrite is needed; require a dry-run overwrite token before replacement.
+- For agent-authored `store` commits, use the dedicated `--co-owner NAME
+  <EMAIL>` option to add a canonical `Co-authored-by: NAME <EMAIL>` trailer.
+  Validate the identity and reject malformed, duplicate, or option-injection
+  input; never hand-edit trailers or pass raw Git commit options.
 - Keep `check` read-only apart from refreshing remote tracking metadata; `sync`
   performs the bidirectional pull and push workflow. `STORE_PUSH_MODE=automatic` also
   pushes a successful `store` commit.
@@ -68,6 +72,11 @@ appropriate. For behavior changes, test both the no-update path and a staged
 update path, including failure before any home-directory replacement.
 
 Run and extend `tests/test_dotfiles_sync.sh` for updater behavior changes.
+
+The planned co-owner change must cover interactive and non-interactive
+`store`, dry runs, invalid identities, duplicate identities, and commit
+metadata. It is not implemented until the CLI help, README, tests, and all
+mirrored guidance describe the same argument and behavior.
 
 When shared policy changes, update `AGENTS.md`,
 `.github/copilot-instructions.md`, `.agents/skills/`, and the relevant OpenCode
