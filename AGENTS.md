@@ -15,7 +15,8 @@ deploy across multiple machines.
   allowlists, staging, or an explicit migration.
 - When creating a commit, use Conventional Commits: `type(optional-scope): short
   imperative description`.
-- Implement changes on `main` first. For an intentional compatible maintenance
+- Implement every change on a dedicated branch; never commit implementation
+  changes directly on `main`. For an intentional compatible maintenance
   backport, add `Backport-To: release/vMAJOR[.MINOR]` in the commit body after it
   is ready for the backport workflow; never add it to unrelated future work.
 - Create `release/vMAJOR.MINOR` only when the user explicitly requests a
@@ -24,7 +25,15 @@ deploy across multiple machines.
 - Use semantic release levels consistently: new backward-compatible features
   are minor releases, breaking changes are major releases, and fixes only are
   patch releases.
-- Do not commit, push, or create pull requests unless explicitly requested.
+- Manage the full change lifecycle: create the dedicated branch, commit and
+  push the change, create its pull request, wait for required checks to pass,
+  and merge the pull request. The job is not complete until the pull request
+  has been fully managed and merged, unless the user explicitly pauses or
+  declines a step.
+- If the requested change or the repository workflow requires a new major,
+  minor, or patch release, inform the user and ask for approval before
+  releasing it. If the user requests a release, manage the appropriate
+  semantic version release as part of the same workflow.
 - When shared behavior changes, keep `.github/copilot-instructions.md` and the
   OpenCode files under `.opencode/`, and Codex skills under `.agents/skills/`
   aligned with these rules.

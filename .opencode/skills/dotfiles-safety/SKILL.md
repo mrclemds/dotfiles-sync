@@ -30,7 +30,8 @@ Apply this skill to all dotfiles and updater work.
   repository and `~/.config/dotfiles-sync/` at runtime.
 - When asked to commit, use Conventional Commits:
   `type(optional-scope): short imperative description`.
-- Implement fixes on `main` first. Use a `Backport-To: release/vMAJOR[.MINOR]`
+- Implement every change on a dedicated branch; never commit implementation
+  changes directly on `main`. Use a `Backport-To: release/vMAJOR[.MINOR]`
   commit trailer only for intentional compatible maintenance backports.
 - Create `release/vMAJOR.MINOR` only when the user explicitly requests a
   diverging minor maintenance line. A minor version request alone releases from
@@ -38,6 +39,15 @@ Apply this skill to all dotfiles and updater work.
 - Use semantic release levels consistently: new backward-compatible features
   are minor releases, breaking changes are major releases, and fixes only are
   patch releases.
+- Manage the full change lifecycle: create the dedicated branch, commit and
+  push the change, create its pull request, wait for required checks to pass,
+  and merge the pull request. The job is not complete until the pull request
+  has been fully managed and merged, unless the user explicitly pauses or
+  declines a step.
+- If the requested change or repository workflow requires a major, minor, or
+  patch release, inform the user and ask for approval before releasing it. If
+  the user requests a release, manage the appropriate semantic version
+  release as part of the same workflow.
 
 ## Update Lifecycle
 

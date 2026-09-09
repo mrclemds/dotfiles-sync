@@ -46,9 +46,10 @@ When changing behavior:
 When asked to commit, use a Conventional Commit subject:
 `type(optional-scope): short imperative description`.
 
-Implement fixes on `main` first. For a requested compatible maintenance
-backport, add `Backport-To: release/vMAJOR[.MINOR]` to the commit body so the
-backport workflow can create a reviewable pull request.
+Implement every change on a dedicated branch; never commit implementation
+changes directly on `main`. For a requested compatible maintenance backport,
+add `Backport-To: release/vMAJOR[.MINOR]` to the commit body so the backport
+workflow can create a reviewable pull request.
 Use semantic release levels consistently: new backward-compatible features are
 minor releases, breaking changes are major releases, and fixes only are patch
 releases.
@@ -57,5 +58,12 @@ Create `release/vMAJOR.MINOR` only when the user explicitly requests a
 diverging minor maintenance line. A minor version request alone releases from
 the existing major maintenance branch.
 
-Do not enable automatic application by default. Do not commit or push unless
-the user explicitly asks.
+Do not enable automatic application by default. Manage the full change
+lifecycle: create the dedicated branch, commit and push the change, create its
+pull request, wait for required checks to pass, and merge the pull request.
+The job is not complete until the pull request has been fully managed and
+merged, unless the user explicitly pauses or declines a step. If the requested
+change or repository workflow requires a major, minor, or patch release, inform
+the user and ask for approval before releasing it. If the user requests a
+release, manage the appropriate semantic version release as part of the same
+workflow.
