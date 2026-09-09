@@ -14,7 +14,8 @@ GitHub Codespaces.
 - Never silently overwrite user configuration.
 - When creating a commit, use Conventional Commits: `type(optional-scope): short
   imperative description`.
-- Implement changes on `main` first. For an intentional compatible maintenance
+- Implement every change on a dedicated branch; never commit implementation
+  changes directly on `main`. For an intentional compatible maintenance
   backport, add `Backport-To: release/vMAJOR[.MINOR]` in the commit body; do not
   use it for unrelated future work.
 - Create `release/vMAJOR.MINOR` only when the user explicitly requests a
@@ -23,7 +24,15 @@ GitHub Codespaces.
 - Use semantic release levels consistently: new backward-compatible features
   are minor releases, breaking changes are major releases, and fixes only are
   patch releases.
-- Do not commit, push, or create pull requests unless explicitly requested.
+- Manage the full change lifecycle: create the dedicated branch, commit and
+  push the change, create its pull request, wait for required checks to pass,
+  and merge the pull request. The job is not complete until the pull request
+  has been fully managed and merged, unless the user explicitly pauses or
+  declines a step.
+- If the requested change or repository workflow requires a major, minor, or
+  patch release, inform the user and ask for approval before releasing it. If
+  the user requests a release, manage the appropriate semantic version
+  release as part of the same workflow.
 
 ## Dotfiles Sync Contract
 
