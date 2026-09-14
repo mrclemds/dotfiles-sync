@@ -228,17 +228,38 @@ assert_file "$HOME/managed.txt"
 assert_contains "$HOME/managed.txt" two
 "$HOME/.local/bin/dotfiles-sync" help apply > "$TEST_DIR/apply-help"
 assert_contains "$TEST_DIR/apply-help" '--force'
+
+printf 'home-only change\n' > "$HOME/managed.txt"
+touch -t 203001010000 "$HOME/managed.txt"
+"$HOME/.local/bin/dotfiles-sync" check > "$TEST_DIR/home-newer-check.log"
+assert_contains "$TEST_DIR/home-newer-check.log" 'managed.txt (home copy newer'
+printf 'two\n' > "$HOME/managed.txt"
+rm "$HOME/managed.txt"
+"$HOME/.local/bin/dotfiles-sync" check > "$TEST_DIR/missing-home-check.log"
+assert_contains "$TEST_DIR/missing-home-check.log" 'missing home file: managed.txt'
+printf 'two\n' > "$HOME/managed.txt"
+
+printf 'three\n' > "$TEST_DIR/seed/managed.txt"
+git -C "$TEST_DIR/seed" add managed.txt
+git -C "$TEST_DIR/seed" commit -m "test: stage newer managed file" >/dev/null
+git -C "$TEST_DIR/seed" push origin main >/dev/null
+"$HOME/.local/bin/dotfiles-sync" sync > /dev/null
+touch -t 202001010000 "$HOME/managed.txt"
+"$HOME/.local/bin/dotfiles-sync" check > "$TEST_DIR/managed-newer-check.log"
+assert_contains "$TEST_DIR/managed-newer-check.log" 'managed.txt (managed copy newer'
+"$HOME/.local/bin/dotfiles-sync" apply >/dev/null
+
 printf 'locally broken\n' > "$HOME/managed.txt"
 rm -f "$XDG_STATE_HOME/dotfiles-sync/applied-commit" "$XDG_STATE_HOME/dotfiles-sync/pending-commit"
 "$HOME/.local/bin/dotfiles-sync" apply --force > "$TEST_DIR/force-apply.log"
-assert_contains "$HOME/managed.txt" two
+assert_contains "$HOME/managed.txt" three
 assert_contains "$TEST_DIR/force-apply.log" 'applied revision'
 [ -r "$XDG_STATE_HOME/dotfiles-sync/applied-commit" ] || fail "force apply did not update state"
 [ "$(cat "$XDG_STATE_HOME/dotfiles-sync/applied-commit")" = "$(git -C "$TEST_DIR/seed" rev-parse HEAD)" ] \
     || fail "force apply recorded the wrong revision"
 
 sed -i 's/^SYNC_APPLY_MODE=manual$/SYNC_APPLY_MODE=automatic/' "$XDG_CONFIG_HOME/dotfiles-sync/config"
-printf 'three\n' > "$TEST_DIR/seed/managed.txt"
+printf 'four\n' > "$TEST_DIR/seed/managed.txt"
 git -C "$TEST_DIR/seed" add managed.txt
 git -C "$TEST_DIR/seed" commit -m "test: automatically apply managed file" >/dev/null
 git -C "$TEST_DIR/seed" push origin main >/dev/null
@@ -247,7 +268,7 @@ assert_contains "$TEST_DIR/automatic-sync.log" 'pulled and applied revision'
 if grep -q 'pulled and staged revision' "$TEST_DIR/automatic-sync.log"; then
     fail "automatic sync reported an applied revision as staged"
 fi
-assert_contains "$HOME/managed.txt" three
+assert_contains "$HOME/managed.txt" four
 
 sed -i 's/^STORE_PUSH_MODE=manual$/STORE_PUSH_MODE=automatic/' "$XDG_CONFIG_HOME/dotfiles-sync/config"
 printf 'push automatically\n' > "$HOME/push.txt"
@@ -260,5 +281,23 @@ pushed_line=$(grep -n 'pushed revision' "$TEST_DIR/automatic-store.log" | cut -d
 [ "$stored_line" -lt "$pushed_line" ] || fail "automatic store push log order is incorrect"
 git --git-dir="$TEST_DIR/remote.git" show main:push.txt >/dev/null \
     || fail "automatic store push did not push local commit"
+
+"$HOME/.local/bin/dotfiles-sync" help resolve > "$TEST_DIR/resolve-help"
+assert_contains "$TEST_DIR/resolve-help" '--strategy STRATEGY'
+"$HOME/.local/bin/dotfiles-sync" resolve --status > "$TEST_DIR/resolve-status"
+assert_contains "$TEST_DIR/resolve-status" 'synchronized at revision'
+
+printf 'resolve push\n' > "$XDG_DATA_HOME/dotfiles-sync/dotfiles/resolve.txt"
+git -C "$XDG_DATA_HOME/dotfiles-sync/dotfiles" add resolve.txt
+git -C "$XDG_DATA_HOME/dotfiles-sync/dotfiles" commit -m "test: resolve push" >/dev/null
+resolve_dry_run=$(
+    "$HOME/.local/bin/dotfiles-sync" resolve --push --dry-run --non-interactive
+)
+resolve_token=$(printf '%s\n' "$resolve_dry_run" | awk -F= '/^RESOLVE_TOKEN=/{print $2}')
+"$HOME/.local/bin/dotfiles-sync" resolve --push --non-interactive --confirm "$resolve_token" \
+    > "$TEST_DIR/resolve-push.log"
+assert_contains "$TEST_DIR/resolve-push.log" 'pushed revision'
+git --git-dir="$TEST_DIR/remote.git" show main:resolve.txt >/dev/null \
+    || fail "resolve push did not push local commit"
 
 printf '%s\n' 'dotfiles-sync tests passed'

@@ -33,6 +33,7 @@ show_help() {
         store) show_store_help; return ;;
         remove) show_remove_help; return ;;
         apply) show_apply_help; return ;;
+        resolve) show_resolve_help; return ;;
         self-update|sync|check|status|rollback|daemon)
             printf 'Usage: dotfiles-sync %s\n' "$command"
             return
@@ -53,7 +54,8 @@ Commands:
   uninstall [OPTIONS]     Remove the CLI, scheduler, and optional configuration.
   self-update             Download and install the latest CLI release.
   sync                    Fetch, fast-forward, stage managed files, and push.
-  check                   Fetch metadata and report repository status only.
+    check                   Fetch metadata and report repository and home drift.
+  resolve [OPTIONS]       Resolve an explicit remote/local Git conflict.
    apply [--force]         Apply the staged revision to $HOME with a backup.
   status                  Show the configured repository and revision state.
   rollback [BACKUP]       Restore the latest backup, or BACKUP if specified.
@@ -73,6 +75,25 @@ Safety:
 EOF
     printf 'Configuration: %s\n' "$CONFIG_FILE"
     printf 'State and logs: %s\n' "$STATE_DIR"
+}
+
+show_resolve_help() {
+    cat <<'EOF'
+Usage: dotfiles-sync resolve [OPTIONS]
+
+Inspect or explicitly reconcile the managed repository with its remote.
+Successful pulls are staged and validated; no resolve operation applies files
+to $HOME.
+
+Options:
+  --status                Report whether local and remote histories diverge.
+  --pull                  Pull remote changes; use --strategy as well.
+  --strategy STRATEGY     ff-only, rebase, or merge (default: ff-only).
+  --push                  Push local commits when the remote has not changed.
+  --dry-run               Preview the operation and print a confirmation token.
+  --confirm TOKEN         Confirm the operation after --dry-run.
+  --non-interactive       Require --confirm instead of prompting.
+EOF
 }
 
 show_store_help() {
@@ -228,6 +249,59 @@ configured_paths() {
             printf '%s\n' "$path"
         fi
     done
+}
+
+file_mtime() {
+    path=$1
+    if stat -c '%Y' "$path" >/dev/null 2>&1; then
+        stat -c '%Y' "$path"
+    else
+        stat -f '%m' "$path"
+    fi
+}
+
+format_timestamp() {
+    timestamp=$1
+    date -u -d "@$timestamp" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \
+        || date -u -r "$timestamp" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \
+        || printf '%s' "$timestamp"
+}
+
+report_home_drift() {
+    paths_file=$STATE_DIR/check-paths.$$
+    mkdir -p "$STATE_DIR"
+    configured_paths > "$paths_file"
+    drift_found=no
+    printf '%s\n' "Managed files versus \$HOME:"
+    while IFS= read -r path; do
+        source=$REPO_DIR/$path
+        target=$HOME/$path
+        [ -f "$source" ] || continue
+        if [ ! -e "$target" ]; then
+            printf '  missing home file: %s\n' "$path"
+            drift_found=yes
+            continue
+        fi
+        [ -f "$target" ] || continue
+        if cmp -s "$source" "$target"; then
+            continue
+        fi
+        managed_timestamp=$(git -C "$REPO_DIR" log -1 --format='%ct' -- "$path")
+        home_timestamp=$(file_mtime "$target")
+        if [ "$managed_timestamp" -gt "$home_timestamp" ]; then
+            updated_last='managed copy newer'
+        elif [ "$home_timestamp" -gt "$managed_timestamp" ]; then
+            updated_last='home copy newer'
+        else
+            updated_last='update time unknown'
+        fi
+        printf '  differs: %s (%s; managed=%s; home=%s)\n' \
+            "$path" "$updated_last" "$(format_timestamp "$managed_timestamp")" \
+            "$(format_timestamp "$home_timestamp")"
+        drift_found=yes
+    done < "$paths_file"
+    rm -f "$paths_file"
+    [ "$drift_found" = yes ] || printf '%s\n' '  none'
 }
 
 ignored_path() {
@@ -728,6 +802,7 @@ check_once() {
     else
         die "local and remote histories diverged; resolve manually in $REPO_DIR"
     fi
+    report_home_drift
 }
 
 push_local_changes() {
@@ -752,6 +827,99 @@ push_once() {
     [ -z "$(git status --porcelain)" ] || die "local changes found in $REPO_DIR; refusing to push"
     git fetch --quiet origin "$BRANCH"
     push_local_changes
+}
+
+resolve_once() {
+    load_config
+    ensure_dotfiles_checkout
+    cd "$REPO_DIR"
+    operation=status
+    strategy=ff-only
+    dry_run=no
+    non_interactive=no
+    confirm=
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --status) operation=status; shift ;;
+            --pull) operation=pull; shift ;;
+            --push) operation=push; shift ;;
+            --strategy)
+                [ "$#" -ge 2 ] || die "--strategy requires ff-only, rebase, or merge"
+                strategy=$2
+                shift 2
+                ;;
+            --dry-run) dry_run=yes; shift ;;
+            --confirm)
+                [ "$#" -ge 2 ] || die "--confirm requires a token"
+                confirm=$2
+                shift 2
+                ;;
+            --non-interactive) non_interactive=yes; shift ;;
+            *) die "unknown resolve option: $1" ;;
+        esac
+    done
+    case "$strategy" in ff-only|rebase|merge) ;; *) die "--strategy must be ff-only, rebase, or merge" ;; esac
+    [ "$operation" = pull ] || [ "$strategy" = ff-only ] \
+        || die "--strategy is only valid with --pull"
+    [ "$operation" != status ] || [ "$dry_run" = no ] \
+        || die "--dry-run requires --pull or --push"
+    [ "$operation" != status ] || [ -z "$confirm" ] \
+        || die "--confirm requires --pull or --push"
+    [ -z "$(git status --porcelain)" ] || die "local changes found in $REPO_DIR; refusing to resolve"
+    git fetch --quiet origin "$BRANCH"
+    local_head=$(git rev-parse HEAD)
+    remote_head=$(git rev-parse "origin/$BRANCH")
+    if [ "$local_head" = "$remote_head" ]; then
+        log "synchronized at revision $local_head"
+        [ "$operation" = status ] || die "nothing to resolve"
+        return 0
+    fi
+    if git merge-base --is-ancestor HEAD "origin/$BRANCH"; then
+        relation='remote-ahead'
+    elif git merge-base --is-ancestor "origin/$BRANCH" HEAD; then
+        relation='local-ahead'
+    else
+        relation=diverged
+    fi
+    if [ "$operation" = status ]; then
+        log "$relation: local=$local_head remote=$remote_head"
+        return 0
+    fi
+    if [ "$operation" = push ] && [ "$relation" != local-ahead ]; then
+        die "cannot push when repository is $relation; use resolve --pull first"
+    fi
+    if [ "$operation" = pull ] && [ "$strategy" = ff-only ] && [ "$relation" = local-ahead ]; then
+        die "cannot fast-forward pull when local history is ahead"
+    fi
+    token_input=$(printf '%s\n' "$operation" "$strategy" "$local_head" "$remote_head")
+    token_checksum=$(printf '%s' "$token_input" | cksum | cut -d ' ' -f 1)
+    resolve_token="dotfiles-sync-resolve-$token_checksum"
+    if [ "$dry_run" = yes ]; then
+        printf 'RESOLVE_TOKEN=%s\n' "$resolve_token"
+        printf 'Operation: %s\nStrategy: %s\nRelation: %s\n' "$operation" "$strategy" "$relation"
+        return 0
+    fi
+    if [ "$non_interactive" = yes ] || [ ! -t 0 ] || [ ! -t 1 ]; then
+        [ "$confirm" = "$resolve_token" ] || die "resolve requires --confirm $resolve_token (run --dry-run first)"
+    else
+        printf 'Resolve %s history with %s? [y/N] ' "$relation" "$strategy" > /dev/tty
+        read -r answer < /dev/tty || die "cannot read resolve confirmation"
+        case "$answer" in y|Y|yes|YES) ;; *) die "resolve declined" ;; esac
+    fi
+    if [ "$operation" = push ]; then
+        push_local_changes
+        return 0
+    fi
+    case "$strategy" in
+        ff-only) git merge --ff-only --quiet "origin/$BRANCH" ;;
+        rebase) git rebase --quiet "origin/$BRANCH" || die "rebase stopped; resolve conflicts in $REPO_DIR" ;;
+        merge) git merge --quiet --no-edit "origin/$BRANCH" || die "merge stopped; resolve conflicts in $REPO_DIR" ;;
+        *) die "--strategy must be ff-only, rebase, or merge" ;;
+    esac
+    commit=$(git rev-parse HEAD)
+    stage_files "$commit"
+    validate_stage "$PENDING_DIR/$commit"
+    log "pulled and staged revision $commit"
 }
 
 sync_once() {
@@ -1215,6 +1383,10 @@ case "${1:-sync}" in
         esac
         ;;
     status) show_status ;;
+    resolve)
+        shift
+        case "${1:-}" in --help|-h) show_resolve_help ;; *) resolve_once "$@" ;; esac
+        ;;
     rollback) rollback "${2:-}" ;;
     store)
         shift
