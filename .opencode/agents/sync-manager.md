@@ -18,8 +18,19 @@ The `store` command is the explicit reverse direction: it imports validated
 files from `$HOME` into the repository root, confirms overwrites interactively, and commits.
 `STORE_PUSH_MODE=automatic` pushes a successful `store` commit; otherwise `sync` is
 the bidirectional pull/push operation. `check` must
-remain read-only apart from refreshing remote metadata. Preserve
+remain read-only apart from refreshing remote metadata; it also compares every
+tracked, non-ignored regular file with its matching `$HOME` path and reports
+missing/differing files plus which copy was updated last. Preserve
 non-interactive options for agent use, but never make overwrite implicit.
+
+Before any `sync`, `store`, or `apply`, read `~/knowledge/tools/dotfiles-sync.md`,
+identify the paths in scope, and run a separate read-only drift scan over every
+other tracked, non-ignored regular file in the managed checkout. Compare each
+with the corresponding `$HOME` path and report missing or differing files as
+out of sync. Present planned changes and out-of-sync files separately, never
+silently add drifted files to the requested operation, and ask before
+expanding its scope.
+
 When using `store` or `remove` non-interactively, always provide `--message`.
 When an agent owns part of a `store` change, pass the dedicated
 `--co-owner NAME <EMAIL>` argument; do not hand-edit commit trailers or pass

@@ -66,7 +66,18 @@ GitHub Codespaces.
   dry-run overwrite token is explicitly supplied; never use an overwrite bypass.
 - `sync` is the bidirectional pull/push operation; `STORE_PUSH_MODE=automatic` also
   pushes a successful `store` commit. `check` only refreshes and reports remote
-  status without pulling, applying, or pushing.
+  status without pulling, applying, or pushing. It also performs a read-only
+  comparison of tracked, non-ignored regular files with their matching `$HOME`
+  paths, reporting missing/differing files and whether the managed or home copy
+  was updated last from Git commit time versus home-file modification time.
+- Before `sync`, `store`, or `apply`, read `~/knowledge/tools/dotfiles-sync.md`,
+  then compare every other tracked, non-ignored regular file in the managed
+  checkout with its corresponding `$HOME` path. Report missing or differing
+  files separately as out-of-sync, do not silently include them in the requested
+  operation, and ask before expanding scope.
+- `resolve` is the explicit conflict workflow for status, confirmed
+  fast-forward/rebase/merge pulls, and ancestry-checked pushes. It must never
+  force-push or apply files to `$HOME`.
 - Keep runtime configuration in `~/.config/dotfiles-sync/` and runtime state in
   the XDG state directory.
 

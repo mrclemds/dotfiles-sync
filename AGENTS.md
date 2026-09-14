@@ -76,6 +76,13 @@ deploy across multiple machines.
   pull requests for older scripts. Do not delete migrations manually.
 - `sync` may pull fast-forward changes and push local commits; `check` must not
   pull, apply, or push.
+- `check` also compares every tracked, non-ignored regular file with its
+  matching `$HOME` path and reports missing or differing files. For differing
+  files, it reports which copy was updated last using the managed path's latest
+  Git commit time and the home file's modification time; equal timestamps are
+  reported as unknown.
+- `resolve` is the explicit conflict workflow: status, confirmed fast-forward,
+  rebase/merge pulls, and ancestry-checked pushes; it must never force-push.
 - Every apply must retain a rollback-capable backup.
 - Only tracked files at the managed repository root may be copied to the
   user's home directory.
@@ -84,16 +91,7 @@ deploy across multiple machines.
 - Updater configuration belongs under `.config/dotfiles-sync/` in the
   repository and `~/.config/dotfiles-sync/` at runtime.
 
-## Co-Owner Implementation Plan
+## Reference Documentation
 
-- Add `--co-owner NAME <EMAIL>` to `store` only; keep it repeatable for multiple
-  agents and reject it for `remove` unless a later requirement explicitly
-  expands the scope.
-- Parse and validate the name/email as one identity, construct trailers with
-  Git's trailer-safe mechanism, and preserve the supplied commit message.
-- Cover interactive and non-interactive `store`, dry runs, malformed input,
-  duplicate identities, and the resulting commit metadata in
-  `tests/test_dotfiles_sync.sh`.
-- Update `README.md`, help output, and all mirrored agent guidance when the CLI
-  behavior is implemented; run shell syntax, ShellCheck, focused tests, and
-  `git diff --check`.
+- Use `README.md` for the public CLI workflow and
+  `~/knowledge/tools/dotfiles-sync.md` for reusable operational guidance.
