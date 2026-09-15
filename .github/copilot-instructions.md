@@ -29,6 +29,9 @@ GitHub Codespaces.
   and merge the pull request. The job is not complete until the pull request
   has been fully managed and merged, unless the user explicitly pauses or
   declines a step.
+- Before pushing or handing off a branch, verify that every commit unique to
+  the branch has a valid signature with `git log --show-signature` and
+  `%G?`. Configure commit signing when needed; do not push unverified commits.
 - If the requested change or repository workflow requires a major, minor, or
   patch release, inform the user and ask for approval before releasing it. If
   the user requests a release, manage the appropriate semantic version
