@@ -46,7 +46,8 @@ Managed paths are relative to the dotfiles repository root. For example,
 | Command | Purpose |
 | --- | --- |
 | `dotfiles-sync sync` | Fetch, stage, and push local `store`/`remove` commits. |
-| `dotfiles-sync check` | Report remote status without pull, apply, or push. |
+| `dotfiles-sync check` | Report remote status and managed-versus-home drift without apply or push. |
+| `dotfiles-sync resolve` | Inspect or explicitly reconcile remote/local Git history. |
 | `dotfiles-sync status` | Show the applied and pending revisions. |
 | `dotfiles-sync apply` | Deploy the pending revision with a backup. |
 | `dotfiles-sync rollback` | Restore the newest backup. |
@@ -58,6 +59,13 @@ Managed paths are relative to the dotfiles repository root. For example,
 managed dotfiles repository, and it does not require GitHub CLI authentication.
 It will not downgrade an installation that is newer than the latest published
 release.
+
+`check` also compares every tracked, non-ignored regular file in the managed
+checkout with its matching path under `$HOME`. It reports missing home files
+and differing files. For differences, `managed copy newer` or `home copy newer`
+is based on the latest Git commit time for the managed path and the home file's
+modification time; `update time unknown` is used when those timestamps are
+equal. This is a read-only report and does not change either copy.
 
 ## Managing Files
 
@@ -78,6 +86,21 @@ If synchronization state is stale or incorrectly reports nothing to apply, use
 `dotfiles-sync apply --force` to rebuild the snapshot from the managed checkout
 `HEAD` and redeploy it. This still validates files, creates a backup, and updates
 the applied revision state.
+
+When `sync` reports that local and remote histories diverged, use `resolve`
+explicitly. It never applies files to `$HOME`:
+
+```sh
+dotfiles-sync resolve --status
+dotfiles-sync resolve --pull --strategy rebase
+dotfiles-sync resolve --push
+```
+
+Supported pull strategies are `ff-only`, `rebase`, and `merge`. Pull and push
+operations require confirmation, or `--dry-run` followed by the printed token
+with `--confirm` for non-interactive use. Automatic `sync` never rebases,
+merges, or force-pushes. If a rebase or merge has conflicts, resolve them with
+Git in the managed checkout, then run `dotfiles-sync resolve --push`.
 
 For agents and other non-interactive callers, supply a message. If replacement
 is needed, first request a dry run and then pass its confirmation token:
@@ -155,6 +178,8 @@ with an empty `AFTER_APPLY_HOOK` setting.
 
 - `check` does not pull, apply, or push.
 - `sync` rejects dirty checkouts and non-fast-forward updates.
+- `resolve` is the only command that performs an explicitly confirmed rebase,
+  merge, or push; it never force-pushes.
 - `sync` stages only tracked repository-root files.
 - `apply` validates staged files, writes through temporary files, and preserves
   a rollback-capable backup.

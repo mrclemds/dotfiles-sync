@@ -29,6 +29,12 @@ GitHub Codespaces.
   and merge the pull request. The job is not complete until the pull request
   has been fully managed and merged, unless the user explicitly pauses or
   declines a step.
+- Before pushing or handing off a branch, verify that every commit unique to
+  the branch has a valid signature with `git log --show-signature` and
+  `%G?`. For GitHub-hosted branches, also verify that the signing key
+  fingerprint is registered in the GitHub account and that the PR shows
+  commits as `Verified`; local keyring verification alone is insufficient.
+  Configure commit signing when needed and do not push unverified commits.
 - If the requested change or repository workflow requires a major, minor, or
   patch release, inform the user and ask for approval before releasing it. If
   the user requests a release, manage the appropriate semantic version
@@ -66,7 +72,18 @@ GitHub Codespaces.
   dry-run overwrite token is explicitly supplied; never use an overwrite bypass.
 - `sync` is the bidirectional pull/push operation; `STORE_PUSH_MODE=automatic` also
   pushes a successful `store` commit. `check` only refreshes and reports remote
-  status without pulling, applying, or pushing.
+  status without pulling, applying, or pushing. It also performs a read-only
+  comparison of tracked, non-ignored regular files with their matching `$HOME`
+  paths, reporting missing/differing files and whether the managed or home copy
+  was updated last from Git commit time versus home-file modification time.
+- Before `sync`, `store`, or `apply`, read `~/knowledge/tools/dotfiles-sync.md`,
+  then compare every other tracked, non-ignored regular file in the managed
+  checkout with its corresponding `$HOME` path. Report missing or differing
+  files separately as out-of-sync, do not silently include them in the requested
+  operation, and ask before expanding scope.
+- `resolve` is the explicit conflict workflow for status, confirmed
+  fast-forward/rebase/merge pulls, and ancestry-checked pushes. It must never
+  force-push or apply files to `$HOME`.
 - Keep runtime configuration in `~/.config/dotfiles-sync/` and runtime state in
   the XDG state directory.
 

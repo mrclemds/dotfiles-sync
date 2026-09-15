@@ -21,9 +21,11 @@ Apply this skill to all dotfiles and updater work.
   <EMAIL>` option to add a canonical `Co-authored-by: NAME <EMAIL>` trailer.
   Validate the identity and reject malformed, duplicate, or option-injection
   input; never hand-edit trailers or pass raw Git commit options.
-- Keep `check` read-only apart from refreshing remote tracking metadata; `sync`
-  performs the bidirectional pull and push workflow. `STORE_PUSH_MODE=automatic` also
-  pushes a successful `store` commit.
+- Keep `check` read-only apart from refreshing remote tracking metadata; it also
+  compares tracked, non-ignored regular files with their matching `$HOME` paths
+  and reports missing/differing files plus which copy was updated last. `sync`
+  performs the bidirectional pull and push workflow. `STORE_PUSH_MODE=automatic`
+  also pushes a successful `store` commit.
 - Never add credentials or private machine state to tracked files.
 - Keep generated state under the configured XDG state directory.
 - Updater configuration belongs under `.config/dotfiles-sync/` in the
@@ -59,6 +61,23 @@ same validation, backup, deployment, and applied-state recording steps.
 Never apply directly from a remote ref or from an unvalidated checkout. Run an
 after-apply hook only when it is tracked, non-ignored, validated, and deployed
 with the applied revision.
+
+## Drift Report Before Sync
+
+Before proposing or running `sync`, `store`, or `apply`, read the reusable
+`~/knowledge/tools/dotfiles-sync.md` guidance and identify the paths planned
+for that operation. Then perform a separate read-only comparison of every
+other tracked, non-ignored regular file in the managed checkout with its
+corresponding path under `$HOME`. Treat missing home files and differing file
+contents as out of sync. Use the configured runtime ignore patterns and the
+repository's tracked file list; do not scan or report ignored machine-local
+state.
+
+Report planned paths and out-of-sync paths in separate groups, including
+whether each out-of-sync path is missing or differs. Do not silently add
+out-of-sync paths to the operation. Ask the user whether to handle them
+separately, and keep the requested operation limited to its planned paths
+unless the user explicitly expands its scope.
 
 CLI self-updates must download a validated HTTPS release archive and atomically
 replace only the deployed CLI directory. They must not modify a source checkout.
