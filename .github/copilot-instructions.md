@@ -31,7 +31,10 @@ GitHub Codespaces.
   declines a step.
 - Before pushing or handing off a branch, verify that every commit unique to
   the branch has a valid signature with `git log --show-signature` and
-  `%G?`. Configure commit signing when needed; do not push unverified commits.
+  `%G?`. For GitHub-hosted branches, also verify that the signing key
+  fingerprint is registered in the GitHub account and that the PR shows
+  commits as `Verified`; local keyring verification alone is insufficient.
+  Configure commit signing when needed and do not push unverified commits.
 - If the requested change or repository workflow requires a major, minor, or
   patch release, inform the user and ask for approval before releasing it. If
   the user requests a release, manage the appropriate semantic version
